@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="320" viewBox="0 0 980 320" role="img" aria-label="插件入门流程图">
+  <rect width="980" height="320" rx="24" fill="#0f172a"/>
+  <rect x="34" y="38" width="270" height="244" rx="18" fill="#1f2937" stroke="#60a5fa" stroke-width="3"/>
+  <rect x="354" y="38" width="270" height="244" rx="18" fill="#1f2937" stroke="#34d399" stroke-width="3"/>
+  <rect x="674" y="38" width="270" height="244" rx="18" fill="#1f2937" stroke="#fbbf24" stroke-width="3"/>
+  <text x="169" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">第一步</text>
+  <text x="169" y="144" text-anchor="middle" fill="#ffffff" font-size="26" font-family="Microsoft YaHei, sans-serif">打开插件窗口</text>
+  <text x="169" y="188" text-anchor="middle" fill="#93c5fd" font-size="20" font-family="Microsoft YaHei, sans-serif">输入 /atsound</text>
+  <text x="489" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">第二步</text>
+  <text x="489" y="144" text-anchor="middle" fill="#ffffff" font-size="26" font-family="Microsoft YaHei, sans-serif">导入音效文件</text>
+  <text x="489" y="188" text-anchor="middle" fill="#86efac" font-size="20" font-family="Microsoft YaHei, sans-serif">mp3 / wav / ogg 都可以</text>
+  <text x="809" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">第三步</text>
+  <text x="809" y="144" text-anchor="middle" fill="#ffffff" font-size="26" font-family="Microsoft YaHei, sans-serif">新建规则并测试</text>
+  <text x="809" y="188" text-anchor="middle" fill="#fde68a" font-size="20" font-family="Microsoft YaHei, sans-serif">先做一条能响的</text>
+  <path d="M312 160h34" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M334 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M632 160h34" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M654 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

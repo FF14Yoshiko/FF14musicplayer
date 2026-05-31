@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="320" viewBox="0 0 980 320" role="img" aria-label="分享包流程图">
+  <rect width="980" height="320" rx="24" fill="#08111f"/>
+  <rect x="38" y="40" width="260" height="240" rx="18" fill="#162033" stroke="#60a5fa" stroke-width="3"/>
+  <rect x="360" y="40" width="260" height="240" rx="18" fill="#162033" stroke="#34d399" stroke-width="3"/>
+  <rect x="682" y="40" width="260" height="240" rx="18" fill="#162033" stroke="#f472b6" stroke-width="3"/>
+  <text x="168" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">导出</text>
+  <text x="168" y="145" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">选分组或规则</text>
+  <text x="168" y="190" text-anchor="middle" fill="#93c5fd" font-size="20" font-family="Microsoft YaHei, sans-serif">一起打包成 .sfxpack</text>
+  <text x="490" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">打包</text>
+  <text x="490" y="145" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">音效和规则一起走</text>
+  <text x="490" y="190" text-anchor="middle" fill="#86efac" font-size="20" font-family="Microsoft YaHei, sans-serif">导入后自动修正路径</text>
+  <text x="812" y="92" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">导入</text>
+  <text x="812" y="145" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">双击或点导入按钮</text>
+  <text x="812" y="190" text-anchor="middle" fill="#f9a8d4" font-size="20" font-family="Microsoft YaHei, sans-serif">直接合并到当前方案</text>
+  <path d="M302 160h38" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M328 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M624 160h38" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M650 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

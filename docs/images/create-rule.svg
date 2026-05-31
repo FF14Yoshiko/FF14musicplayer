@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="320" viewBox="0 0 980 320" role="img" aria-label="创建规则流程图">
+  <rect width="980" height="320" rx="24" fill="#0f172a"/>
+  <rect x="34" y="40" width="200" height="240" rx="18" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+  <rect x="390" y="40" width="200" height="240" rx="18" fill="#1e293b" stroke="#34d399" stroke-width="3"/>
+  <rect x="746" y="40" width="200" height="240" rx="18" fill="#1e293b" stroke="#f59e0b" stroke-width="3"/>
+  <text x="134" y="88" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">触发器</text>
+  <text x="134" y="140" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">使用技能</text>
+  <text x="134" y="184" text-anchor="middle" fill="#93c5fd" font-size="18" font-family="Microsoft YaHei, sans-serif">SkillUsed</text>
+  <text x="490" y="88" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">条件</text>
+  <text x="490" y="140" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">只在你自己</text>
+  <text x="490" y="184" text-anchor="middle" fill="#86efac" font-size="18" font-family="Microsoft YaHei, sans-serif">地图 / 职业 / 血量都能加</text>
+  <text x="846" y="88" text-anchor="middle" fill="#e5e7eb" font-size="28" font-family="Microsoft YaHei, sans-serif">动作</text>
+  <text x="846" y="140" text-anchor="middle" fill="#ffffff" font-size="24" font-family="Microsoft YaHei, sans-serif">播放音效</text>
+  <text x="846" y="184" text-anchor="middle" fill="#fde68a" font-size="18" font-family="Microsoft YaHei, sans-serif">也可以循环或停止</text>
+  <path d="M236 160h130" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M348 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M592 160h130" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round"/>
+  <path d="M704 146l18 14-18 14" fill="none" stroke="#e5e7eb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

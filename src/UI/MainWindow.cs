@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -23,6 +24,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly GameDataLookupService gameDataLookupService;
     private readonly Configuration configuration;
     private readonly Action reloadRules;
+    private static readonly string TutorialPath = Path.Combine(AppContext.BaseDirectory, "docs", "tutorial.html");
+    private string windowMessage = string.Empty;
     private string newProfileName = string.Empty;
     private string newGroupName = string.Empty;
     private string newSoundId = string.Empty;
@@ -63,6 +66,11 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "本地音效规则引擎");
         ImGui.SameLine();
         DrawActiveProfileQuickSwitch();
+        ImGui.SameLine();
+        if (ImGui.Button("查看插件教程"))
+            OpenTutorial();
+        if (!string.IsNullOrWhiteSpace(windowMessage))
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), windowMessage);
         ImGui.Separator();
 
         if (!ImGui.BeginTabBar("##AllTimeSoundTriggerTabs"))
@@ -103,6 +111,29 @@ public sealed partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+    }
+
+    private void OpenTutorial()
+    {
+        try
+        {
+            if (!File.Exists(TutorialPath))
+            {
+                windowMessage = $"未找到教程文件：{TutorialPath}";
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = TutorialPath,
+                UseShellExecute = true
+            });
+            windowMessage = "已打开插件教程。";
+        }
+        catch (Exception ex)
+        {
+            windowMessage = $"打开教程失败：{ex.Message}";
+        }
     }
 
     private void DrawRulesTab()

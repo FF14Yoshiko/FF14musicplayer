@@ -21,7 +21,7 @@ try {
         git remote add origin "https://github.com/$Repository.git"
     }
 
-    git add README.md .gitignore AllTimeSoundTrigger.csproj AllTimeSoundTrigger.json plugin.json pluginmaster.json config.example.json images src tests scripts dist
+    git add README.md .gitignore AllTimeSoundTrigger.csproj AllTimeSoundTrigger.json plugin.json pluginmaster.json config.example.json images docs src tests scripts dist
     git commit -m "Prepare public Dalamud plugin release"
     git push -u origin $Branch
 }
