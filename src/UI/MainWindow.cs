@@ -24,7 +24,6 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly GameDataLookupService gameDataLookupService;
     private readonly Configuration configuration;
     private readonly Action reloadRules;
-    private static readonly string TutorialPath = Path.Combine(AppContext.BaseDirectory, "docs", "tutorial.html");
     private string windowMessage = string.Empty;
     private string newProfileName = string.Empty;
     private string newGroupName = string.Empty;
@@ -117,15 +116,16 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         try
         {
-            if (!File.Exists(TutorialPath))
+            var tutorialPath = ResolveTutorialPath();
+            if (!File.Exists(tutorialPath))
             {
-                windowMessage = $"未找到教程文件：{TutorialPath}";
+                windowMessage = $"未找到教程文件：{tutorialPath}";
                 return;
             }
 
             Process.Start(new ProcessStartInfo
             {
-                FileName = TutorialPath,
+                FileName = tutorialPath,
                 UseShellExecute = true
             });
             windowMessage = "已打开插件教程。";
@@ -134,6 +134,22 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             windowMessage = $"打开教程失败：{ex.Message}";
         }
+    }
+
+    private static string ResolveTutorialPath()
+    {
+        var assemblyPath = typeof(MainWindow).Assembly.Location;
+        if (!string.IsNullOrWhiteSpace(assemblyPath))
+        {
+            var assemblyDirectory = Path.GetDirectoryName(assemblyPath);
+            if (!string.IsNullOrWhiteSpace(assemblyDirectory))
+                return Path.Combine(assemblyDirectory, "docs", "tutorial.html");
+        }
+
+        if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
+            return Path.Combine(AppContext.BaseDirectory, "docs", "tutorial.html");
+
+        return Path.GetFullPath(Path.Combine("docs", "tutorial.html"));
     }
 
     private void DrawRulesTab()
