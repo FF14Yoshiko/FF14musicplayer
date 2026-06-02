@@ -27,6 +27,7 @@ public sealed class TriggerFactory
             definition.ActorName,
             definition.TargetName,
             definition.LocalPlayerOnly ?? false));
+        Register("LocalPlayerDefeated", _ => new EventTypeTrigger("LocalPlayerDefeated"));
         Register("MapChanged", definition => new MapChangedTrigger(
             definition.TerritoryType,
             definition.MapId));

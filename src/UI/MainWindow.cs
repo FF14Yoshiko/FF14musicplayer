@@ -413,7 +413,16 @@ public sealed partial class MainWindow : Window, IDisposable
             ImGui.TableNextRow();
 
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(entry.Name);
+            if (DrawInputText($"名称##SoundName{i}", entry.Name, 120, value =>
+                {
+                    entry.Name = value;
+                    entry.Normalize();
+                    configuration.Save();
+                    soundLibraryMessage = $"已重命名音效：{entry.Name}";
+                }, 180f))
+            {
+                // SoundId stays stable, so existing rules keep pointing at the same sound.
+            }
             ImGui.TextDisabled(entry.Id);
 
             ImGui.TableNextColumn();
@@ -445,10 +454,14 @@ public sealed partial class MainWindow : Window, IDisposable
             if (ImGui.SmallButton("删除"))
             {
                 var removedName = entry.Name;
+                var removedPath = entry.FilePath;
                 entries.RemoveAt(i);
+                var deletedFile = DeleteManagedSoundFileIfUnused(removedPath);
                 configuration.Save();
                 reloadRules();
-                soundLibraryMessage = $"已删除：{removedName}";
+                soundLibraryMessage = deletedFile
+                    ? $"已删除：{removedName}，并已删除导入文件。"
+                    : $"已删除：{removedName}";
                 ImGui.PopID();
                 break;
             }
@@ -517,6 +530,41 @@ public sealed partial class MainWindow : Window, IDisposable
         soundLibraryMessage = played ? $"正在测试：{entry.Name}" : $"测试失败：{entry.Name}";
     }
 
+    private bool DeleteManagedSoundFileIfUnused(string filePath)
+    {
+        var normalizedPath = FilePathText.Normalize(filePath);
+        if (normalizedPath.Length == 0)
+            return false;
+
+        if (configuration.SoundLibrary.Entries.Exists(entry =>
+                FilePathText.Normalize(entry.FilePath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var managedDirectory = Path.GetFullPath(sfxPackService.ManagedSoundDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(normalizedPath);
+        if (!fullPath.StartsWith(managedDirectory, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            if (File.Exists(fullPath))
+            {
+                File.Delete(fullPath);
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            soundLibraryMessage = $"已删除音效条目，但删除文件失败：{ex.Message}";
+        }
+
+        return false;
+    }
+
     private static string BuildSoundId(string requestedId, string requestedName, string filePath)
     {
         var soundId = requestedId.Trim();
@@ -545,14 +593,14 @@ public sealed partial class MainWindow : Window, IDisposable
         return candidate;
     }
 
-    private static bool DrawInputText(string label, string currentValue, uint maxLength, Action<string> setValue)
+    private static bool DrawInputText(string label, string currentValue, uint maxLength, Action<string> setValue, float width = 520f)
     {
         var value = currentValue ?? string.Empty;
         var encoded = Encoding.UTF8.GetBytes(value);
         var buffer = new byte[Math.Max((int)maxLength + 1, encoded.Length + 8)];
         Array.Copy(encoded, buffer, Math.Min(encoded.Length, buffer.Length - 1));
 
-        ImGui.SetNextItemWidth(520f);
+        ImGui.SetNextItemWidth(width);
         if (!ImGui.InputText(label, buffer))
             return false;
 

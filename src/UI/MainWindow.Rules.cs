@@ -20,6 +20,7 @@ public sealed partial class MainWindow
         "CombatExited",
         "HpChanged",
         "HpLow",
+        "LocalPlayerDefeated",
         "JobChanged",
         "StatusGained",
         "StatusLost",
@@ -123,22 +124,14 @@ public sealed partial class MainWindow
             ImGui.EndCombo();
         }
 
+        ImGui.SameLine();
+        if (ImGui.Button("新建空方案##CreateProfileQuick"))
+            CreateAndSwitchProfile(string.Empty);
+
         DrawInputText("新方案名##NewProfileName", newProfileName, 120, value => newProfileName = value);
         ImGui.SameLine();
         if (ImGui.Button("新增方案"))
-        {
-            var profile = profileStorageService.CreateProfile(newProfileName);
-            profileStorageService.SwitchProfile(profile.Id, configuration);
-            selectedRuleId = null;
-            selectedGroupId = null;
-            exportGroupIds.Clear();
-            exportRuleIds.Clear();
-            exportPackagePath = string.Empty;
-            importPreview = null;
-            newProfileName = string.Empty;
-            reloadRules();
-            rulesEditorMessage = $"已新增方案：{profile.Name}";
-        }
+            CreateAndSwitchProfile(newProfileName);
 
         ImGui.SameLine();
         if (ImGui.Button("删除当前方案"))
@@ -169,7 +162,12 @@ public sealed partial class MainWindow
         var activeProfile = profileStorageService.ActiveProfile;
         ImGui.SetNextItemWidth(220f);
         if (!ImGui.BeginCombo("当前方案##TopActiveProfile", activeProfile.Name))
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("新建方案##TopCreateProfile"))
+                CreateAndSwitchProfile(string.Empty);
             return;
+        }
 
         foreach (var profile in profileStorageService.Profiles)
         {
@@ -194,6 +192,24 @@ public sealed partial class MainWindow
         }
 
         ImGui.EndCombo();
+        ImGui.SameLine();
+        if (ImGui.SmallButton("新建方案##TopCreateProfile"))
+            CreateAndSwitchProfile(string.Empty);
+    }
+
+    private void CreateAndSwitchProfile(string requestedName)
+    {
+        var profile = profileStorageService.CreateProfile(requestedName);
+        profileStorageService.SwitchProfile(profile.Id, configuration);
+        selectedRuleId = null;
+        selectedGroupId = null;
+        exportGroupIds.Clear();
+        exportRuleIds.Clear();
+        exportPackagePath = string.Empty;
+        importPreview = null;
+        newProfileName = string.Empty;
+        reloadRules();
+        rulesEditorMessage = $"已新增方案：{profile.Name}";
     }
 
     private void DrawAutoSwitchEditor()
@@ -869,6 +885,10 @@ public sealed partial class MainWindow
         {
             DrawPercentInputInt("低于等于 HP%##TriggerHpLowPercent", trigger.HpPercentBelow, value => trigger.HpPercentBelow = value);
         }
+        else if (trigger.Type.Equals("LocalPlayerDefeated", StringComparison.OrdinalIgnoreCase))
+        {
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "本机玩家 HP 从大于 0 变为 0 时触发。");
+        }
         else if (trigger.Type.Equals("JobChanged", StringComparison.OrdinalIgnoreCase))
         {
             DrawNonNegativeInputInt("指定职业 ID，0=任意##TriggerClassJobId", trigger.ClassJobId, value => trigger.ClassJobId = value);
@@ -1317,6 +1337,7 @@ public sealed partial class MainWindow
             "CombatExited" => "脱离战斗",
             "HpChanged" => "血量变化",
             "HpLow" => "血量过低",
+            "LocalPlayerDefeated" => "本机玩家被击倒",
             "JobChanged" => "切换职业",
             "StatusGained" => "获得状态/Buff",
             "StatusLost" => "状态/Buff 消失",

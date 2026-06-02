@@ -60,7 +60,13 @@ try {
         Copy-Item -Path .\docs\* -Destination (Join-Path $packageDirectory 'docs') -Recurse -Force
     }
 
+    if (Test-Path -LiteralPath .\example-sounds) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $packageDirectory 'example-sounds') | Out-Null
+        Copy-Item -Path .\example-sounds\* -Destination (Join-Path $packageDirectory 'example-sounds') -Recurse -Force
+    }
+
     Add-FolderToZip -ZipPath (Join-Path $packageDirectory 'latest.zip') -SourcePath .\docs -ZipFolder docs
+    Add-FolderToZip -ZipPath (Join-Path $packageDirectory 'latest.zip') -SourcePath .\example-sounds -ZipFolder example-sounds
 
     New-Item -ItemType Directory -Force -Path .\dist | Out-Null
     Copy-Item -LiteralPath (Join-Path $packageDirectory 'latest.zip') -Destination .\dist\latest.zip -Force

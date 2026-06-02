@@ -85,7 +85,9 @@ public sealed class EventLogService
                 Timestamp = gameEvent.Timestamp,
                 Level = "Event",
                 EventType = gameEvent.EventType,
-                Message = $"HP：{payload.PreviousCurrentHp}/{payload.PreviousMaxHp} ({payload.PreviousHpPercent:0.0}%) -> {payload.CurrentHp}/{payload.MaxHp} ({payload.HpPercent:0.0}%)"
+                Message = gameEvent.EventType.Equals("LocalPlayerDefeated", StringComparison.OrdinalIgnoreCase)
+                    ? $"本机玩家被击倒：{payload.PreviousCurrentHp}/{payload.PreviousMaxHp} -> 0/{payload.MaxHp}"
+                    : $"HP：{payload.PreviousCurrentHp}/{payload.PreviousMaxHp} ({payload.PreviousHpPercent:0.0}%) -> {payload.CurrentHp}/{payload.MaxHp} ({payload.HpPercent:0.0}%)"
             },
             JobChangedPayload payload => new EventLogEntry
             {

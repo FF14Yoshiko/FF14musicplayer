@@ -115,7 +115,7 @@ public sealed class ClientStatePoller : IEventSource
             if (lastSnapshot.MaxHp > 0 && current.MaxHp > 0
                 && (current.CurrentHp != lastSnapshot.CurrentHp || current.MaxHp != lastSnapshot.MaxHp))
             {
-                Publish("HpChanged", new HpChangedPayload
+                var payload = new HpChangedPayload
                 {
                     PreviousCurrentHp = lastSnapshot.CurrentHp,
                     CurrentHp = current.CurrentHp,
@@ -123,7 +123,11 @@ public sealed class ClientStatePoller : IEventSource
                     MaxHp = current.MaxHp,
                     PreviousHpPercent = CalculateHpPercent(lastSnapshot.CurrentHp, lastSnapshot.MaxHp),
                     HpPercent = CalculateHpPercent(current.CurrentHp, current.MaxHp)
-                });
+                };
+
+                Publish("HpChanged", payload);
+                if (lastSnapshot.CurrentHp > 0 && current.CurrentHp == 0)
+                    Publish("LocalPlayerDefeated", payload);
             }
 
             if (current.IsInCombat != lastSnapshot.IsInCombat)

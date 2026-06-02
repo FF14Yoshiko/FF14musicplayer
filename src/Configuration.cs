@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using AllTimeSoundTrigger.Audio;
 using AllTimeSoundTrigger.ConfigurationModels;
+using AllTimeSoundTrigger.Services;
 using Dalamud.Configuration;
 using Dalamud.Plugin;
 
@@ -10,7 +11,7 @@ namespace AllTimeSoundTrigger;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    private const int CurrentVersion = 8;
+    private const int CurrentVersion = 10;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -22,6 +23,10 @@ public sealed class Configuration : IPluginConfiguration
 
     public AutoSwitchConfiguration AutoSwitch { get; set; } = new();
 
+    public bool BuiltInExampleSoundsInstalled { get; set; }
+
+    public bool BuiltInExampleRulesInstalled { get; set; }
+
     // Kept for one-time migration from older builds. New rule sets live in profiles/*.json.
     public List<RuleDefinition> Rules { get; set; } = [];
 
@@ -31,7 +36,15 @@ public sealed class Configuration : IPluginConfiguration
     public void Initialize(IDalamudPluginInterface pluginInterface)
     {
         this.pluginInterface = pluginInterface;
-        if (Normalize())
+        var changed = Normalize();
+        if (!BuiltInExampleSoundsInstalled)
+        {
+            changed |= BuiltInExampleContent.EnsureSoundLibrary(pluginInterface, SoundLibrary);
+            BuiltInExampleSoundsInstalled = true;
+            changed = true;
+        }
+
+        if (changed)
             Save();
     }
 

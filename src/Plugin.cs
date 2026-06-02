@@ -160,7 +160,7 @@ public sealed class Plugin : IDalamudPlugin
         else if (gameEvent.Payload is JobChangedPayload jobPayload)
             log.Information("[AllTimeSoundTrigger] JobChanged: {OldJob} -> {Job}", jobPayload.PreviousClassJobId, jobPayload.ClassJobId);
         else if (gameEvent.Payload is HpChangedPayload hpPayload)
-            log.Information("[AllTimeSoundTrigger] HpChanged: {OldHp}/{OldMaxHp} -> {Hp}/{MaxHp} ({Percent:0.0}%)", hpPayload.PreviousCurrentHp, hpPayload.PreviousMaxHp, hpPayload.CurrentHp, hpPayload.MaxHp, hpPayload.HpPercent);
+            log.Information("[AllTimeSoundTrigger] {EventType}: {OldHp}/{OldMaxHp} -> {Hp}/{MaxHp} ({Percent:0.0}%)", gameEvent.EventType, hpPayload.PreviousCurrentHp, hpPayload.PreviousMaxHp, hpPayload.CurrentHp, hpPayload.MaxHp, hpPayload.HpPercent);
         else if (gameEvent.Payload is CombatStateChangedPayload combatPayload)
             log.Information("[AllTimeSoundTrigger] CombatState: {OldState} -> {State}", combatPayload.WasInCombat, combatPayload.IsInCombat);
         else if (gameEvent.Payload is StatusChangedPayload statusPayload)

@@ -59,14 +59,27 @@ public sealed class ProfileStorageService
         {
             IEnumerable<RuleDefinition> legacyRules = configuration.Rules.Count > 0
                 ? configuration.Rules
-                : new[] { RuleDefinition.CreateDefaultSkillLogRule() };
+                : BuiltInExampleContent.CreateSampleRules();
             var defaultProfile = ProfileDefinition.CreateDefault(legacyRules);
+            defaultProfile.GetOrCreateDefaultGroup().Name = "示例分组";
             defaultProfile.Normalize();
             profiles.Add(defaultProfile);
             SaveProfile(defaultProfile);
 
             configuration.Rules = [];
             configuration.ActiveProfileId = defaultProfile.Id;
+            configuration.BuiltInExampleRulesInstalled = true;
+            configuration.Save();
+        }
+
+        var builtInDefaultProfile = profiles.FirstOrDefault(profile => profile.Id.Equals("default", StringComparison.OrdinalIgnoreCase));
+        if (!configuration.BuiltInExampleRulesInstalled
+            && builtInDefaultProfile != null)
+        {
+            if (BuiltInExampleContent.EnsureSampleRules(builtInDefaultProfile))
+                SaveProfile(builtInDefaultProfile);
+
+            configuration.BuiltInExampleRulesInstalled = true;
             configuration.Save();
         }
 
