@@ -24,6 +24,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly GameDataLookupService gameDataLookupService;
     private readonly Configuration configuration;
     private readonly Action reloadRules;
+    private readonly string pluginDirectory;
     private string windowMessage = string.Empty;
     private string newProfileName = string.Empty;
     private string newGroupName = string.Empty;
@@ -41,7 +42,8 @@ public sealed partial class MainWindow : Window, IDisposable
         SfxPackService sfxPackService,
         GameDataLookupService gameDataLookupService,
         Configuration configuration,
-        Action reloadRules)
+        Action reloadRules,
+        string pluginDirectory)
         : base($"{Plugin.DisplayName}##AllTimeSoundTriggerMainWindow")
     {
         this.eventLogService = eventLogService;
@@ -51,6 +53,7 @@ public sealed partial class MainWindow : Window, IDisposable
         this.gameDataLookupService = gameDataLookupService;
         this.configuration = configuration;
         this.reloadRules = reloadRules;
+        this.pluginDirectory = pluginDirectory;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(720, 460),
@@ -136,20 +139,41 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    private static string ResolveTutorialPath()
+    private string ResolveTutorialPath()
     {
+        var candidates = new List<string>();
+        AddCandidate(candidates, pluginDirectory);
+
         var assemblyPath = typeof(MainWindow).Assembly.Location;
         if (!string.IsNullOrWhiteSpace(assemblyPath))
         {
             var assemblyDirectory = Path.GetDirectoryName(assemblyPath);
             if (!string.IsNullOrWhiteSpace(assemblyDirectory))
-                return Path.Combine(assemblyDirectory, "docs", "tutorial.html");
+                AddCandidate(candidates, assemblyDirectory);
         }
 
         if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
-            return Path.Combine(AppContext.BaseDirectory, "docs", "tutorial.html");
+            AddCandidate(candidates, AppContext.BaseDirectory);
 
-        return Path.GetFullPath(Path.Combine("docs", "tutorial.html"));
+        AddCandidate(candidates, Directory.GetCurrentDirectory());
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return candidates.Count > 0 ? candidates[0] : Path.GetFullPath(Path.Combine("docs", "tutorial.html"));
+    }
+
+    private static void AddCandidate(List<string> candidates, string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+            return;
+
+        var candidate = Path.GetFullPath(Path.Combine(directory, "docs", "tutorial.html"));
+        if (!candidates.Exists(item => item.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+            candidates.Add(candidate);
     }
 
     private void DrawRulesTab()

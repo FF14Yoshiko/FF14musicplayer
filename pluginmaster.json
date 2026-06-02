@@ -3,7 +3,7 @@
     "Author": "肘击",
     "Name": "全时刻音效触发器",
     "InternalName": "AllTimeSoundTrigger",
-    "AssemblyVersion": "0.1.2.0",
+    "AssemblyVersion": "0.1.3.0",
     "Description": "一个本地音效触发器：监听聊天日志、战斗状态、地图切换、职业变化、HP、Buff、物品获得、击杀等本地可见事件，并按用户配置的方案、分组和规则播放本地音效。支持音效库管理、规则编辑、Buff 消失自动停止循环音效、方案一键切换、地图自动切换方案，以及 .sfxpack 音效包导入导出分享。",
     "ApplicableVersion": "any",
     "Tags": ["sound", "trigger", "audio", "notification", "音效", "触发器", "提醒"],

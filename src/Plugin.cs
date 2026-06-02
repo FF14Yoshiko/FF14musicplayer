@@ -78,7 +78,15 @@ public sealed class Plugin : IDalamudPlugin
             soundId => Configuration.SoundLibrary.FindById(soundId));
         ReloadRulesFromConfiguration();
 
-        mainWindow = new MainWindow(eventLogService, audioPlaybackService, profileStorageService, sfxPackService, gameDataLookupService, Configuration, ReloadRulesFromConfiguration);
+        mainWindow = new MainWindow(
+            eventLogService,
+            audioPlaybackService,
+            profileStorageService,
+            sfxPackService,
+            gameDataLookupService,
+            Configuration,
+            ReloadRulesFromConfiguration,
+            pluginInterface.AssemblyLocation.DirectoryName ?? string.Empty);
         windowSystem.AddWindow(mainWindow);
 
         eventSubscription = eventBus.Subscribe(OnGameEvent);
