@@ -11,7 +11,7 @@ namespace AllTimeSoundTrigger;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    private const int CurrentVersion = 10;
+    private const int CurrentVersion = 11;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -26,6 +26,12 @@ public sealed class Configuration : IPluginConfiguration
     public bool BuiltInExampleSoundsInstalled { get; set; }
 
     public bool BuiltInExampleRulesInstalled { get; set; }
+
+    public bool CommunityDeveloperMode { get; set; }
+
+    public string CommunityRepositoryPath { get; set; } = @"D:\MyFF14\ffxiv-sfx-community";
+
+    public string CommunitySubmissionAuthor { get; set; } = string.Empty;
 
     // Kept for one-time migration from older builds. New rule sets live in profiles/*.json.
     public List<RuleDefinition> Rules { get; set; } = [];
@@ -63,6 +69,13 @@ public sealed class Configuration : IPluginConfiguration
         AutoSwitch ??= new AutoSwitchConfiguration();
         AutoSwitch.Normalize();
         Rules ??= [];
+        CommunityRepositoryPath = (CommunityRepositoryPath ?? string.Empty).Trim();
+        CommunitySubmissionAuthor = (CommunitySubmissionAuthor ?? string.Empty).Trim();
+        if (CommunityRepositoryPath.Length == 0)
+        {
+            CommunityRepositoryPath = @"D:\MyFF14\ffxiv-sfx-community";
+            changed = true;
+        }
 
         if (string.IsNullOrWhiteSpace(ActiveProfileId))
         {

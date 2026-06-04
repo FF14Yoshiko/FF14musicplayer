@@ -1,4 +1,5 @@
 using System;
+using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.Audio;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources;
@@ -31,6 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AudioPlaybackService audioPlaybackService;
     private readonly ProfileStorageService profileStorageService;
     private readonly SfxPackService sfxPackService;
+    private readonly CommunityPackService communityPackService;
     private readonly GameDataLookupService gameDataLookupService;
     private readonly RuleFactory ruleFactory;
     private readonly WindowSystem windowSystem = new("AllTimeSoundTrigger");
@@ -53,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
         ClientCondition condition,
         IDataManager dataManager,
         IChatGui chatGui,
+        ITextureProvider textureProvider,
         IPluginLog log)
     {
         this.pluginInterface = pluginInterface;
@@ -64,6 +67,7 @@ public sealed class Plugin : IDalamudPlugin
         profileStorageService = new ProfileStorageService(log);
         profileStorageService.Initialize(Configuration);
         sfxPackService = new SfxPackService(log);
+        communityPackService = new CommunityPackService(sfxPackService.RootDirectory, log);
         gameDataLookupService = new GameDataLookupService(dataManager, log);
 
         audioPlaybackService = new AudioPlaybackService(
@@ -83,7 +87,9 @@ public sealed class Plugin : IDalamudPlugin
             audioPlaybackService,
             profileStorageService,
             sfxPackService,
+            communityPackService,
             gameDataLookupService,
+            textureProvider,
             Configuration,
             ReloadRulesFromConfiguration,
             pluginInterface.AssemblyLocation.DirectoryName ?? string.Empty);
@@ -124,6 +130,7 @@ public sealed class Plugin : IDalamudPlugin
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
         audioPlaybackService.Dispose();
+        communityPackService.Dispose();
         log.Information("[AllTimeSoundTrigger] Plugin unloaded.");
     }
 

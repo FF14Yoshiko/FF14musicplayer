@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using AllTimeSoundTrigger.Audio;
 using AllTimeSoundTrigger.Core;
@@ -13,31 +14,43 @@ public sealed class SoundAction : IContextualAction
     private readonly AudioPlaybackService audioPlaybackService;
     private readonly EventLogService eventLogService;
     private readonly IPluginLog log;
-    private readonly AudioPlaybackRequest request;
+    private readonly IReadOnlyList<AudioPlaybackRequest> requests;
+    private readonly Random random = new();
 
     public SoundAction(
         AudioPlaybackService audioPlaybackService,
         EventLogService eventLogService,
         IPluginLog log,
-        AudioPlaybackRequest request)
+        IReadOnlyList<AudioPlaybackRequest> requests)
     {
         this.audioPlaybackService = audioPlaybackService;
         this.eventLogService = eventLogService;
         this.log = log;
-        this.request = request;
+        this.requests = requests.Count > 0
+            ? requests
+            : throw new ArgumentException("SoundAction requires at least one playback request.", nameof(requests));
     }
 
     public void Execute()
     {
-        ExecuteCore(request);
+        ExecuteCore(PickRequest());
     }
 
     public void Execute(GameEvent gameEvent)
     {
-        ExecuteCore(CreateContextualRequest(gameEvent));
+        ExecuteCore(CreateContextualRequest(gameEvent, PickRequest()));
     }
 
-    private AudioPlaybackRequest? CreateContextualRequest(GameEvent gameEvent)
+    private AudioPlaybackRequest PickRequest()
+    {
+        if (requests.Count == 1)
+            return requests[0];
+
+        lock (random)
+            return requests[random.Next(requests.Count)];
+    }
+
+    private AudioPlaybackRequest? CreateContextualRequest(GameEvent gameEvent, AudioPlaybackRequest request)
     {
         if (!request.StopOnStatusLost)
             return request;

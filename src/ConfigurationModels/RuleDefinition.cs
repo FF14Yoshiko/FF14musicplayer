@@ -35,6 +35,8 @@ public sealed class RuleDefinition
 
         foreach (var action in Actions)
         {
+            action.SoundIds ??= [];
+            action.FilePaths ??= [];
             if (action.StopOnStatusLost)
                 action.Loop = true;
         }

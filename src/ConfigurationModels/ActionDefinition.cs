@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AllTimeSoundTrigger.ConfigurationModels;
 
@@ -11,7 +12,11 @@ public sealed class ActionDefinition
 
     public string SoundId { get; set; } = string.Empty;
 
+    public List<string> SoundIds { get; set; } = [];
+
     public string FilePath { get; set; } = string.Empty;
+
+    public List<string> FilePaths { get; set; } = [];
 
     public float Volume { get; set; } = 1f;
 

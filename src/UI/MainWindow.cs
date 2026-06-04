@@ -7,10 +7,12 @@ using System.Numerics;
 using System.Text;
 using System.Windows.Forms;
 using AllTimeSoundTrigger.Audio;
+using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.ConfigurationModels;
 using AllTimeSoundTrigger.Services;
 using AllTimeSoundTrigger.Utilities;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin.Services;
 using Dalamud.Interface.Windowing;
 
 namespace AllTimeSoundTrigger.UI;
@@ -21,7 +23,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly AudioPlaybackService audioPlaybackService;
     private readonly ProfileStorageService profileStorageService;
     private readonly SfxPackService sfxPackService;
+    private readonly CommunityPackService communityPackService;
     private readonly GameDataLookupService gameDataLookupService;
+    private readonly ITextureProvider textureProvider;
     private readonly Configuration configuration;
     private readonly Action reloadRules;
     private readonly string pluginDirectory;
@@ -40,7 +44,9 @@ public sealed partial class MainWindow : Window, IDisposable
         AudioPlaybackService audioPlaybackService,
         ProfileStorageService profileStorageService,
         SfxPackService sfxPackService,
+        CommunityPackService communityPackService,
         GameDataLookupService gameDataLookupService,
+        ITextureProvider textureProvider,
         Configuration configuration,
         Action reloadRules,
         string pluginDirectory)
@@ -50,7 +56,9 @@ public sealed partial class MainWindow : Window, IDisposable
         this.audioPlaybackService = audioPlaybackService;
         this.profileStorageService = profileStorageService;
         this.sfxPackService = sfxPackService;
+        this.communityPackService = communityPackService;
         this.gameDataLookupService = gameDataLookupService;
+        this.textureProvider = textureProvider;
         this.configuration = configuration;
         this.reloadRules = reloadRules;
         this.pluginDirectory = pluginDirectory;
@@ -99,6 +107,12 @@ public sealed partial class MainWindow : Window, IDisposable
         if (ImGui.BeginTabItem("分享包"))
         {
             DrawPackageTab();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("社区"))
+        {
+            DrawCommunityTab();
             ImGui.EndTabItem();
         }
 
@@ -400,7 +414,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         ImGui.TableSetupColumn("名称 / SoundId", ImGuiTableColumnFlags.WidthFixed, 190f);
         ImGui.TableSetupColumn("状态", ImGuiTableColumnFlags.WidthFixed, 70f);
-        ImGui.TableSetupColumn("音量", ImGuiTableColumnFlags.WidthFixed, 80f);
+        ImGui.TableSetupColumn("音量", ImGuiTableColumnFlags.WidthFixed, 128f);
         ImGui.TableSetupColumn("优先级", ImGuiTableColumnFlags.WidthFixed, 72f);
         ImGui.TableSetupColumn("路径", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("操作", ImGuiTableColumnFlags.WidthFixed, 190f);
@@ -431,7 +445,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 : new Vector4(1f, 0.55f, 0.30f, 1f), File.Exists(entry.FilePath) ? "可用" : "缺失");
 
             ImGui.TableNextColumn();
-            ImGui.Text(entry.DefaultVolume.ToString("0.00"));
+            DrawSoundLibraryVolumeEditor(entry, i);
 
             ImGui.TableNextColumn();
             ImGui.Text(entry.Priority.ToString());
@@ -470,6 +484,25 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         ImGui.EndTable();
+    }
+
+    private void DrawSoundLibraryVolumeEditor(SoundLibraryEntry entry, int index)
+    {
+        var volume = entry.DefaultVolume;
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat($"##SoundVolume{index}", ref volume, 0f, 1f, "%.2f"))
+        {
+            entry.DefaultVolume = Math.Clamp(volume, 0f, 1f);
+            audioPlaybackService.RefreshActiveVolumeForFile(entry.FilePath, entry.DefaultVolume);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            entry.Normalize();
+            configuration.Save();
+            reloadRules();
+            soundLibraryMessage = $"已更新音量：{entry.Name} / {entry.DefaultVolume:0.00}";
+        }
     }
 
     private void AttachSoundToSkillRule(SoundLibraryEntry entry)

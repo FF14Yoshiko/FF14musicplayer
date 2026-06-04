@@ -162,12 +162,7 @@ public sealed partial class MainWindow
         var activeProfile = profileStorageService.ActiveProfile;
         ImGui.SetNextItemWidth(220f);
         if (!ImGui.BeginCombo("当前方案##TopActiveProfile", activeProfile.Name))
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton("新建方案##TopCreateProfile"))
-                CreateAndSwitchProfile(string.Empty);
             return;
-        }
 
         foreach (var profile in profileStorageService.Profiles)
         {
@@ -192,9 +187,6 @@ public sealed partial class MainWindow
         }
 
         ImGui.EndCombo();
-        ImGui.SameLine();
-        if (ImGui.SmallButton("新建方案##TopCreateProfile"))
-            CreateAndSwitchProfile(string.Empty);
     }
 
     private void CreateAndSwitchProfile(string requestedName)
@@ -1000,26 +992,29 @@ public sealed partial class MainWindow
         var entries = configuration.SoundLibrary.Entries;
         if (entries.Count > 0)
         {
-            var currentEntry = configuration.SoundLibrary.FindById(action.SoundId);
-            var preview = currentEntry == null
-                ? string.IsNullOrWhiteSpace(action.SoundId) ? "直接路径" : $"缺失：{action.SoundId}"
-                : $"{currentEntry.Name} ({currentEntry.Id})";
+            var selectedSoundIds = GetSelectedSoundIds(action);
+            var preview = FormatSelectedSoundPreview(selectedSoundIds);
 
             ImGui.SetNextItemWidth(320f);
-            if (ImGui.BeginCombo($"音效库##ActionSoundId{index}", preview))
+            if (ImGui.BeginCombo($"添加音效##ActionSoundId{index}", preview))
             {
-                var directSelected = string.IsNullOrWhiteSpace(action.SoundId);
+                var directSelected = selectedSoundIds.Count == 0;
                 if (ImGui.Selectable("直接路径##DirectSoundPath", directSelected))
-                    action.SoundId = string.Empty;
+                    SetSelectedSoundIds(action, []);
                 if (directSelected)
                     ImGui.SetItemDefaultFocus();
 
                 foreach (var entry in entries)
                 {
-                    var selected = string.Equals(action.SoundId, entry.Id, StringComparison.OrdinalIgnoreCase);
+                    var selected = selectedSoundIds.Contains(entry.Id, StringComparer.OrdinalIgnoreCase);
                     if (ImGui.Selectable($"{entry.Name} ({entry.Id})##Sound{entry.Id}", selected))
                     {
-                        action.SoundId = entry.Id;
+                        if (!selected)
+                        {
+                            selectedSoundIds.Add(entry.Id);
+                            SetSelectedSoundIds(action, selectedSoundIds);
+                        }
+
                         action.FilePath = string.Empty;
                     }
 
@@ -1033,21 +1028,28 @@ public sealed partial class MainWindow
 
         DrawSoundPlaybackOptions(action);
 
-        if (!string.IsNullOrWhiteSpace(action.SoundId))
+        var selectedIds = GetSelectedSoundIds(action);
+        if (selectedIds.Count > 0)
         {
-            var entry = configuration.SoundLibrary.FindById(action.SoundId);
-            if (entry == null)
+            var missingIds = selectedIds
+                .Where(soundId => configuration.SoundLibrary.FindById(soundId) == null)
+                .ToList();
+            if (missingIds.Count > 0)
             {
-                ImGui.TextColored(new Vector4(1f, 0.55f, 0.30f, 1f), $"找不到 SoundId：{action.SoundId}");
-                DrawInputText("SoundId##MissingSoundId", action.SoundId, 120, value => action.SoundId = value);
+                ImGui.TextColored(new Vector4(1f, 0.55f, 0.30f, 1f), $"找不到 SoundId：{string.Join(", ", missingIds)}");
+                DrawInputText("SoundId##MissingSoundId", action.SoundId, 120, value =>
+                {
+                    action.SoundId = value;
+                    action.SoundIds = [];
+                });
                 if (ImGui.SmallButton("改用直接路径"))
-                    action.SoundId = string.Empty;
-                if (!string.IsNullOrWhiteSpace(action.SoundId))
+                    SetSelectedSoundIds(action, []);
+                if (GetSelectedSoundIds(action).Count > 0)
                     return;
             }
             else
             {
-                ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), $"使用音效库参数：音量 {entry.DefaultVolume:0.00} / 优先级 {entry.Priority}");
+                DrawSelectedSoundList(action, selectedIds);
                 return;
             }
         }
@@ -1067,6 +1069,81 @@ public sealed partial class MainWindow
         var interrupt = action.InterruptLowerPriority;
         if (ImGui.Checkbox("可打断低优先级音效##ActionInterrupt", ref interrupt))
             action.InterruptLowerPriority = interrupt;
+    }
+
+    private List<string> GetSelectedSoundIds(ActionDefinition action)
+    {
+        var ids = new List<string>();
+        if (action.SoundIds != null)
+        {
+            ids.AddRange(action.SoundIds
+                .Select(item => (item ?? string.Empty).Trim())
+                .Where(item => item.Length > 0));
+        }
+
+        var legacySoundId = (action.SoundId ?? string.Empty).Trim();
+        if (legacySoundId.Length > 0)
+            ids.Insert(0, legacySoundId);
+
+        return ids
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void SetSelectedSoundIds(ActionDefinition action, IReadOnlyList<string> soundIds)
+    {
+        var normalized = soundIds
+            .Select(item => (item ?? string.Empty).Trim())
+            .Where(item => item.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        action.SoundId = normalized.Count > 0 ? normalized[0] : string.Empty;
+        action.SoundIds = normalized.Count > 1 ? normalized : [];
+        if (normalized.Count > 0)
+        {
+            action.FilePath = string.Empty;
+            action.FilePaths = [];
+        }
+    }
+
+    private string FormatSelectedSoundPreview(IReadOnlyList<string> soundIds)
+    {
+        if (soundIds.Count == 0)
+            return "直接路径";
+
+        if (soundIds.Count > 1)
+            return $"随机播放 {soundIds.Count} 个音效";
+
+        var entry = configuration.SoundLibrary.FindById(soundIds[0]);
+        return entry == null
+            ? $"缺失：{soundIds[0]}"
+            : $"{entry.Name} ({entry.Id})";
+    }
+
+    private void DrawSelectedSoundList(ActionDefinition action, List<string> selectedIds)
+    {
+        ImGui.TextColored(
+            new Vector4(0.70f, 0.72f, 0.76f, 1f),
+            selectedIds.Count == 1 ? "触发时播放这个音效：" : "触发时从以下音效中随机播放一条：");
+
+        for (var i = 0; i < selectedIds.Count; i++)
+        {
+            var soundId = selectedIds[i];
+            var entry = configuration.SoundLibrary.FindById(soundId);
+            ImGui.PushID($"SelectedSound{soundId}");
+            ImGui.TextUnformatted(entry == null ? soundId : $"{entry.Name} ({entry.Id})");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("移除"))
+            {
+                selectedIds.RemoveAt(i);
+                SetSelectedSoundIds(action, selectedIds);
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.PopID();
+        }
     }
 
     private static void DrawSoundPlaybackOptions(ActionDefinition action)
@@ -1279,13 +1356,15 @@ public sealed partial class MainWindow
         action.Type = type;
         if (type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(action.SoundId) && configuration.SoundLibrary.Entries.Count > 0)
-                action.SoundId = configuration.SoundLibrary.Entries[0].Id;
+            if (GetSelectedSoundIds(action).Count == 0 && configuration.SoundLibrary.Entries.Count > 0)
+                SetSelectedSoundIds(action, [configuration.SoundLibrary.Entries[0].Id]);
             return;
         }
 
         action.SoundId = string.Empty;
+        action.SoundIds = [];
         action.FilePath = string.Empty;
+        action.FilePaths = [];
         action.Loop = false;
         action.StopOnStatusLost = false;
         if (type.Equals("StopSound", StringComparison.OrdinalIgnoreCase))

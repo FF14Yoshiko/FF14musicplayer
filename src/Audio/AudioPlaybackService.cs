@@ -175,6 +175,26 @@ public sealed class AudioPlaybackService : IDisposable
             playback.ApplyMasterVolume(currentMasterVolume);
     }
 
+    public void RefreshActiveVolumeForFile(string filePath, float requestVolume)
+    {
+        var normalizedPath = FilePathText.Normalize(filePath);
+        if (normalizedPath.Length == 0)
+            return;
+
+        ActivePlayback[] snapshot;
+        lock (gate)
+        {
+            snapshot = active
+                .Where(item => item.FilePath.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
+        var currentMasterVolume = Math.Clamp(masterVolume(), 0f, 1f);
+        var normalizedRequestVolume = Math.Clamp(requestVolume, 0f, 1f);
+        foreach (var playback in snapshot)
+            playback.ApplyRequestVolume(normalizedRequestVolume, currentMasterVolume);
+    }
+
     public void Dispose()
     {
         if (disposed)
@@ -266,7 +286,7 @@ public sealed class AudioPlaybackService : IDisposable
     {
         private readonly WaveStream reader;
         private readonly VolumeSampleProvider volumeProvider;
-        private readonly float requestVolume;
+        private float requestVolume;
 
         public ActivePlayback(
             string filePath,
@@ -312,6 +332,15 @@ public sealed class AudioPlaybackService : IDisposable
                 return;
 
             volumeProvider.Volume = requestVolume * Math.Clamp(masterVolume, 0f, 1f);
+        }
+
+        public void ApplyRequestVolume(float requestVolume, float masterVolume)
+        {
+            if (IsDisposed)
+                return;
+
+            this.requestVolume = Math.Clamp(requestVolume, 0f, 1f);
+            volumeProvider.Volume = this.requestVolume * Math.Clamp(masterVolume, 0f, 1f);
         }
 
         public void Dispose()

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.ConfigurationModels;
 using AllTimeSoundTrigger.Utilities;
 using Dalamud.Plugin.Services;
@@ -15,7 +16,12 @@ namespace AllTimeSoundTrigger.Services;
 public sealed class SfxPackService
 {
     private const string ProfileEntryName = "profile.json";
+    private const string SubmissionEntryName = "submission.json";
     private const string SoundsPrefix = "sounds/";
+    private const string CoversPrefix = "covers/";
+    private const long MaxCoverBytes = 2L * 1024L * 1024L;
+
+    private static readonly string[] AllowedCoverExtensions = [".png", ".jpg", ".jpeg", ".webp"];
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -36,6 +42,7 @@ public sealed class SfxPackService
         ManagedSoundDirectory = Path.Combine(RootDirectory, "sounds");
         ImportSoundDirectory = Path.Combine(RootDirectory, "importedSounds");
         ExportDirectory = Path.Combine(RootDirectory, "exports");
+        SubmissionDirectory = Path.Combine(RootDirectory, "submissions");
     }
 
     public string RootDirectory { get; }
@@ -46,11 +53,22 @@ public sealed class SfxPackService
 
     public string ExportDirectory { get; }
 
+    public string SubmissionDirectory { get; }
+
     public string BuildDefaultExportPath(string profileName)
     {
         Directory.CreateDirectory(ExportDirectory);
         var safeName = MakeSafeFileName(string.IsNullOrWhiteSpace(profileName) ? "音效分享包" : profileName.Trim());
         return Path.Combine(ExportDirectory, $"{safeName}.sfxpack");
+    }
+
+    public string BuildDefaultSubmissionPath(string packageName)
+    {
+        Directory.CreateDirectory(SubmissionDirectory);
+        var safeName = MakeSafeFileName(string.IsNullOrWhiteSpace(packageName) ? "社区投稿包" : packageName.Trim());
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var directory = string.IsNullOrWhiteSpace(desktop) ? SubmissionDirectory : desktop;
+        return Path.Combine(directory, $"{safeName}.sfxpack");
     }
 
     public string CopySoundIntoManagedDirectory(string sourcePath)
@@ -102,23 +120,33 @@ public sealed class SfxPackService
             if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var sourcePath = ResolveSoundPath(action, soundLibrary);
-            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+            var exportedActionPaths = new List<string>();
+            foreach (var soundRef in ResolveSoundPaths(action, soundLibrary))
             {
-                missingSounds.Add(string.IsNullOrWhiteSpace(action.SoundId) ? action.FilePath : action.SoundId);
-                continue;
+                if (string.IsNullOrWhiteSpace(soundRef.SourcePath) || !File.Exists(soundRef.SourcePath))
+                {
+                    missingSounds.Add(soundRef.DisplayName);
+                    continue;
+                }
+
+                var sourcePath = Path.GetFullPath(soundRef.SourcePath);
+                if (!sourceToZipPath.TryGetValue(sourcePath, out var zipPath))
+                {
+                    zipPath = BuildUniqueSoundZipPath(sourcePath, sourceToZipPath.Values);
+                    sourceToZipPath[sourcePath] = zipPath;
+                    exportedSounds.Add((sourcePath, zipPath));
+                }
+
+                exportedActionPaths.Add(zipPath);
             }
 
-            sourcePath = Path.GetFullPath(sourcePath);
-            if (!sourceToZipPath.TryGetValue(sourcePath, out var zipPath))
-            {
-                zipPath = BuildUniqueSoundZipPath(sourcePath, sourceToZipPath.Values);
-                sourceToZipPath[sourcePath] = zipPath;
-                exportedSounds.Add((sourcePath, zipPath));
-            }
+            if (exportedActionPaths.Count == 0)
+                continue;
 
             action.SoundId = string.Empty;
-            action.FilePath = zipPath;
+            action.SoundIds = [];
+            action.FilePath = exportedActionPaths[0];
+            action.FilePaths = exportedActionPaths.Count > 1 ? exportedActionPaths : [];
         }
 
         var outputDirectory = Path.GetDirectoryName(outputPath);
@@ -160,6 +188,100 @@ public sealed class SfxPackService
         return new SfxPackExportResult(true, message, outputPath, exportProfile.Groups.Count, exportProfile.EnumerateRules().Count(), exportedSounds.Count, missingSounds);
     }
 
+    public SfxPackExportResult ExportSubmission(
+        ProfileDefinition sourceProfile,
+        IReadOnlyCollection<string> selectedGroupIds,
+        IReadOnlyCollection<string> selectedRuleIds,
+        SoundLibraryConfiguration soundLibrary,
+        string packagePath,
+        CommunitySubmissionManifest manifest,
+        string coverPath)
+    {
+        manifest.Normalize();
+        if (string.IsNullOrWhiteSpace(manifest.Readme))
+            manifest.Readme = BuildDefaultSubmissionReadme(manifest);
+
+        var normalizedCoverPath = FilePathText.Normalize(coverPath);
+        if (!string.IsNullOrWhiteSpace(normalizedCoverPath))
+        {
+            if (!File.Exists(normalizedCoverPath))
+                return SfxPackExportResult.Fail("封面文件不存在。");
+
+            var coverInfo = new FileInfo(normalizedCoverPath);
+            if (coverInfo.Length > MaxCoverBytes)
+                return SfxPackExportResult.Fail("封面超过 2MB，请换一张更小的图片。");
+
+            var extension = Path.GetExtension(normalizedCoverPath).ToLowerInvariant();
+            if (!AllowedCoverExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                return SfxPackExportResult.Fail("封面只支持 png、jpg、jpeg、webp。");
+
+            manifest.CoverEntryName = $"{CoversPrefix}cover{extension}";
+        }
+
+        var result = Export(
+            sourceProfile,
+            selectedGroupIds,
+            selectedRuleIds,
+            soundLibrary,
+            packagePath,
+            manifest.Readme);
+        if (!result.Success)
+            return result;
+
+        using (var archive = ZipFile.Open(result.PackagePath, ZipArchiveMode.Update, Encoding.UTF8))
+        {
+            AddTextEntry(archive, SubmissionEntryName, JsonSerializer.Serialize(manifest, SerializerOptions));
+            if (!string.IsNullOrWhiteSpace(manifest.CoverEntryName) && File.Exists(normalizedCoverPath))
+                archive.CreateEntryFromFile(normalizedCoverPath, manifest.CoverEntryName, CompressionLevel.Optimal);
+        }
+
+        log.Information(
+            "[AllTimeSoundTrigger] Exported community submission {Path}: {Name} by {Author}.",
+            result.PackagePath,
+            manifest.Name,
+            manifest.Author);
+
+        return result with { Message = "投稿包生成完成。" };
+    }
+
+    public string WriteSubmissionInfoText(string packagePath, CommunitySubmissionManifest manifest, string coverPath)
+    {
+        manifest.Normalize();
+        var normalizedPackagePath = FilePathText.Normalize(packagePath);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(normalizedPackagePath));
+        if (string.IsNullOrWhiteSpace(directory))
+            directory = SubmissionDirectory;
+
+        Directory.CreateDirectory(directory);
+        var packName = Path.GetFileNameWithoutExtension(normalizedPackagePath);
+        if (string.IsNullOrWhiteSpace(packName))
+            packName = MakeSafeFileName(manifest.Name);
+
+        var infoPath = Path.Combine(directory, $"{packName}_投稿信息.txt");
+        var tags = manifest.Tags.Count == 0 ? "未填写" : string.Join("，", manifest.Tags);
+        var cover = string.IsNullOrWhiteSpace(FilePathText.Normalize(coverPath)) ? "无，如有配图请将图片文件一并发送。" : coverPath;
+        var text = $"""
+                   音效包名称：{manifest.Name}
+                   包 ID：{manifest.Id}
+                   作者署名：{manifest.Author}
+                   简介：{manifest.Description}
+                   标签：{tags}
+                   版本：{manifest.PackageVersion}
+                   投稿日期：{DateTime.Now:yyyy-MM-dd}
+                   配图：{cover}
+                   ---
+                   投稿方式：
+                   请将 .sfxpack、这份投稿信息.txt，以及可选配图发送到：
+                   邮箱：1104449674@qq.com
+                   QQ 群：659827727
+
+                   审核通过后，你的音效包会出现在插件的社区列表中。
+                   """;
+
+        File.WriteAllText(infoPath, text, new UTF8Encoding(false));
+        return infoPath;
+    }
+
     public SfxPackPreview Preview(string packagePath)
     {
         var inputPath = FilePathText.Normalize(packagePath);
@@ -180,6 +302,20 @@ public sealed class SfxPackService
             readme);
     }
 
+    public CommunitySubmissionManifest? TryReadSubmissionManifest(string packagePath)
+    {
+        var inputPath = FilePathText.Normalize(packagePath);
+        using var archive = ZipFile.OpenRead(inputPath);
+        var entry = archive.Entries.FirstOrDefault(item => item.FullName.Equals(SubmissionEntryName, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+            return null;
+
+        using var stream = entry.Open();
+        var manifest = JsonSerializer.Deserialize<CommunitySubmissionManifest>(stream, SerializerOptions);
+        manifest?.Normalize();
+        return manifest;
+    }
+
     public ProfileDefinition Import(string packagePath)
     {
         var inputPath = FilePathText.Normalize(packagePath);
@@ -198,11 +334,19 @@ public sealed class SfxPackService
             if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var relativePath = NormalizeZipPath(action.FilePath);
-            if (extractedSounds.TryGetValue(relativePath, out var extractedPath))
-                action.FilePath = extractedPath;
+            var importedPaths = new List<string>();
+            foreach (var path in GetActionFilePaths(action))
+            {
+                var relativePath = NormalizeZipPath(path);
+                importedPaths.Add(extractedSounds.TryGetValue(relativePath, out var extractedPath)
+                    ? extractedPath
+                    : path);
+            }
 
             action.SoundId = string.Empty;
+            action.SoundIds = [];
+            action.FilePath = importedPaths.Count > 0 ? importedPaths[0] : action.FilePath;
+            action.FilePaths = importedPaths.Count > 1 ? importedPaths : [];
         }
 
         profile.Normalize();
@@ -254,13 +398,60 @@ public sealed class SfxPackService
         => JsonSerializer.Deserialize<RuleDefinition>(JsonSerializer.Serialize(rule, SerializerOptions), SerializerOptions)
             ?? throw new InvalidOperationException("无法复制规则。");
 
-    private static string ResolveSoundPath(ActionDefinition action, SoundLibraryConfiguration soundLibrary)
+    private static IReadOnlyList<SoundPathReference> ResolveSoundPaths(ActionDefinition action, SoundLibraryConfiguration soundLibrary)
     {
-        if (!string.IsNullOrWhiteSpace(action.SoundId))
-            return soundLibrary.FindById(action.SoundId)?.FilePath ?? string.Empty;
+        var soundIds = GetActionSoundIds(action);
+        if (soundIds.Count > 0)
+        {
+            return soundIds
+                .Select(soundId =>
+                {
+                    var entry = soundLibrary.FindById(soundId);
+                    return new SoundPathReference(entry?.FilePath ?? string.Empty, soundId);
+                })
+                .ToArray();
+        }
 
-        return action.FilePath;
+        return GetActionFilePaths(action)
+            .Select(path => new SoundPathReference(path, path))
+            .ToArray();
     }
+
+    private static IReadOnlyList<string> GetActionSoundIds(ActionDefinition action)
+    {
+        var soundIds = new List<string>();
+        if (action.SoundIds != null)
+        {
+            soundIds.AddRange(action.SoundIds
+                .Select(item => (item ?? string.Empty).Trim())
+                .Where(item => item.Length > 0));
+        }
+
+        var soundId = (action.SoundId ?? string.Empty).Trim();
+        if (soundId.Length > 0)
+            soundIds.Insert(0, soundId);
+
+        return soundIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static IReadOnlyList<string> GetActionFilePaths(ActionDefinition action)
+    {
+        var paths = new List<string>();
+        if (action.FilePaths != null)
+        {
+            paths.AddRange(action.FilePaths
+                .Select(item => FilePathText.Normalize(item))
+                .Where(item => item.Length > 0));
+        }
+
+        var filePath = FilePathText.Normalize(action.FilePath);
+        if (filePath.Length > 0)
+            paths.Insert(0, filePath);
+
+        return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private readonly record struct SoundPathReference(string SourcePath, string DisplayName);
 
     private static string BuildUniqueSoundZipPath(string sourcePath, IEnumerable<string> usedPaths)
     {
@@ -302,6 +493,31 @@ public sealed class SfxPackService
         using var reader = new StreamReader(stream, Encoding.UTF8, true);
         return reader.ReadToEnd();
     }
+
+    private static void AddTextEntry(ZipArchive archive, string entryName, string text)
+    {
+        var existing = archive.GetEntry(entryName);
+        existing?.Delete();
+
+        var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+        using var stream = entry.Open();
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+        writer.Write(text);
+    }
+
+    private static string BuildDefaultSubmissionReadme(CommunitySubmissionManifest manifest)
+        => $"""
+           {manifest.Name}
+
+           作者：{manifest.Author}
+
+           {manifest.Description}
+
+           投稿说明：
+           这个 .sfxpack 是给「全时刻音效触发器」社区审核用的投稿包。
+           生成后请发送到邮箱 1104449674@qq.com，或者发送到 QQ 群 659827727。
+           审核通过后，作者会把它加入 Gitee 社区列表，其他用户才能在插件里一键安装。
+           """.Trim();
 
     private static Dictionary<string, string> ExtractSounds(ZipArchive archive, string importDirectory)
     {
