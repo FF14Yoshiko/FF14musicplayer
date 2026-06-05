@@ -182,6 +182,11 @@ public sealed partial class MainWindow
                 submissionMessage = "请先选择至少一条规则。";
                 return;
             }
+            if (string.IsNullOrWhiteSpace(submissionAuthor))
+            {
+                submissionMessage = "请填写作者署名，方便审核和展示。";
+                return;
+            }
 
             var manifest = BuildSubmissionManifest(selection);
             var outputPath = string.IsNullOrWhiteSpace(submissionOutputPath)
@@ -222,7 +227,7 @@ public sealed partial class MainWindow
             ? selection.DisplayName
             : submissionPackageName.Trim();
         var author = string.IsNullOrWhiteSpace(submissionAuthor)
-            ? FirstNonEmpty(configuration.CommunitySubmissionAuthor, Environment.UserName, "未署名玩家")
+            ? "未署名玩家"
             : submissionAuthor.Trim();
 
         var manifest = new CommunitySubmissionManifest
@@ -289,7 +294,7 @@ public sealed partial class MainWindow
         if (string.IsNullOrWhiteSpace(submissionPackageName))
             ResetSubmissionNameFromSelection();
         if (string.IsNullOrWhiteSpace(submissionAuthor))
-            submissionAuthor = FirstNonEmpty(configuration.CommunitySubmissionAuthor, Environment.UserName);
+            submissionAuthor = configuration.CommunitySubmissionAuthor;
         if (string.IsNullOrWhiteSpace(submissionVersion))
             submissionVersion = "1.0.0";
         if (string.IsNullOrWhiteSpace(submissionOutputPath))
@@ -346,6 +351,7 @@ public sealed partial class MainWindow
             tags.Add("PVP");
         if (ContainsAny(haystack, "pve", "PVE", "高难", "零式", "绝本", "副本", "讨伐"))
             tags.Add("PVE");
+        AddKeywordTag(tags, haystack);
 
         return tags.Take(8);
     }
@@ -559,7 +565,11 @@ public sealed partial class MainWindow
         var path = string.IsNullOrWhiteSpace(submissionOutputPath)
             ? sfxPackService.SubmissionDirectory
             : submissionOutputPath;
-        var directory = File.Exists(path) ? Path.GetDirectoryName(path) : path;
+        var directory = File.Exists(path)
+            ? Path.GetDirectoryName(path)
+            : Path.HasExtension(path)
+                ? Path.GetDirectoryName(path)
+                : path;
         if (!string.IsNullOrWhiteSpace(directory))
             OpenCommunityUrl(directory);
     }

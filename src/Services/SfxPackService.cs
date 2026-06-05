@@ -227,6 +227,11 @@ public sealed class SfxPackService
             manifest.Readme);
         if (!result.Success)
             return result;
+        if (result.MissingSounds.Count > 0)
+        {
+            TryDeleteFile(result.PackagePath);
+            return SfxPackExportResult.Fail($"投稿包生成失败：有 {result.MissingSounds.Count} 个音效文件缺失，请先在音效库里修好路径。");
+        }
 
         using (var archive = ZipFile.Open(result.PackagePath, ZipArchiveMode.Update, Encoding.UTF8))
         {
@@ -503,6 +508,19 @@ public sealed class SfxPackService
         using var stream = entry.Open();
         using var writer = new StreamWriter(stream, new UTF8Encoding(false));
         writer.Write(text);
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            // Best-effort cleanup after a failed export.
+        }
     }
 
     private static string BuildDefaultSubmissionReadme(CommunitySubmissionManifest manifest)
