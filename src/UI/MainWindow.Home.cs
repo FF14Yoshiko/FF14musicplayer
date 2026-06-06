@@ -12,7 +12,7 @@ public sealed partial class MainWindow
         ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), "今天想做什么？");
         ImGui.TextColored(
             new Vector4(0.70f, 0.72f, 0.76f, 1f),
-            $"当前方案：{profileStorageService.ActiveProfile.Name} / 分组 {profileStorageService.ActiveProfile.Groups.Count} / 规则 {profileStorageService.GetActiveRules().Count} / 音效 {configuration.SoundLibrary.Entries.Count}");
+            $"当前内容：分组 {profileStorageService.ActiveProfile.Groups.Count} / 规则 {profileStorageService.GetActiveRules().Count} / 音效 {configuration.SoundLibrary.Entries.Count}");
 
         ImGui.Spacing();
         if (ImGui.Button("安装社区音效包##HomeCommunity", new Vector2(220f, 46f)))
@@ -35,8 +35,8 @@ public sealed partial class MainWindow
             ? "音效库还是空的，先去「音效库」导入 mp3/wav/ogg。"
             : $"音效库里已有 {configuration.SoundLibrary.Entries.Count} 个音效。");
         ImGui.BulletText(profileStorageService.GetActiveRules().Count == 0
-            ? "当前方案还没有规则，可以点上面的“自己做一个音效规则”。"
-            : $"当前方案已有 {profileStorageService.GetActiveRules().Count} 条规则。");
+            ? "现在还没有规则，可以点上面的“自己做一个音效规则”。"
+            : $"现在已有 {profileStorageService.GetActiveRules().Count} 条规则。");
         ImGui.BulletText("遇到没响，先看「日志」里有没有事件、规则命中和播放结果。");
 
         ImGui.Separator();

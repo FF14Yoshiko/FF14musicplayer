@@ -14,7 +14,7 @@ namespace AllTimeSoundTrigger.UI;
 
 public sealed partial class MainWindow
 {
-    private static readonly string[] SubmissionScopes = ["整个方案", "某个分组", "单条规则"];
+    private static readonly string[] SubmissionScopes = ["当前全部内容", "某个分组", "单条规则"];
 
     private int submissionScopeIndex;
     private string submissionGroupId = string.Empty;
@@ -251,7 +251,7 @@ public sealed partial class MainWindow
         var groupIds = new List<string>();
         var ruleIds = new List<string>();
         var rules = new List<RuleDefinition>();
-        var displayName = profile.Name;
+        var displayName = "我的音效";
 
         if (submissionScopeIndex == 0)
         {
@@ -305,7 +305,7 @@ public sealed partial class MainWindow
     {
         var selection = BuildSubmissionSelection();
         submissionPackageName = string.IsNullOrWhiteSpace(selection.DisplayName)
-            ? profileStorageService.ActiveProfile.Name
+            ? "我的音效"
             : selection.DisplayName;
         submissionOutputPath = sfxPackService.BuildDefaultSubmissionPath(submissionPackageName);
     }
@@ -617,7 +617,7 @@ public sealed partial class MainWindow
         {
             ImGui.TextColored(
                 new Vector4(0.70f, 0.72f, 0.76f, 1f),
-                $"方案：{reviewValidation.ProfileName} / 分组 {reviewValidation.GroupCount} / 规则 {reviewValidation.RuleCount} / 音效 {reviewValidation.SoundCount} / {FormatBytes(reviewValidation.TotalSoundBytes)}");
+                $"包名：{reviewValidation.ProfileName} / 分组 {reviewValidation.GroupCount} / 规则 {reviewValidation.RuleCount} / 音效 {reviewValidation.SoundCount} / {FormatBytes(reviewValidation.TotalSoundBytes)}");
             if (!string.IsNullOrWhiteSpace(reviewValidation.CoverEntryName))
                 ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), $"包内封面：{reviewValidation.CoverEntryName}");
         }

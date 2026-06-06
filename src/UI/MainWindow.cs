@@ -76,8 +76,6 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "本地音效规则引擎");
         ImGui.SameLine();
-        DrawActiveProfileQuickSwitch();
-        ImGui.SameLine();
         if (ImGui.Button("查看插件教程"))
             OpenTutorial();
         DrawAdvancedModeToggle();
@@ -232,13 +230,10 @@ public sealed partial class MainWindow : Window, IDisposable
     private void DrawAdvancedTab()
     {
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.72f, 0.35f, 1f), "高级模式：这里保留完整规则编辑、方案管理、分享包导入导出和审核发布。");
+        ImGui.TextColored(new Vector4(1f, 0.72f, 0.35f, 1f), "高级模式：这里保留完整规则编辑、分享包导入导出和审核发布。");
 
         if (ImGui.CollapsingHeader("完整规则编辑", ImGuiTreeNodeFlags.DefaultOpen))
             DrawRulesEditorTab();
-
-        if (ImGui.CollapsingHeader("方案管理"))
-            DrawProfilesTab();
 
         if (ImGui.CollapsingHeader("分享包导入导出"))
             DrawPackageTab();

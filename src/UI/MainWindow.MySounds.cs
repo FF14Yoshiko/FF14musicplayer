@@ -42,7 +42,7 @@ public sealed partial class MainWindow
     private void DrawMySoundsTab()
     {
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), $"我的音效：{profileStorageService.ActiveProfile.Name}");
+        ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), "我的音效");
         ImGui.SameLine();
         if (ImGui.Button("新建规则向导"))
             StartRuleWizard();
@@ -71,16 +71,33 @@ public sealed partial class MainWindow
         profile.Normalize();
         if (!profile.EnumerateRules().Any())
         {
-            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "当前方案还没有规则。");
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "现在还没有规则。");
             if (ImGui.Button("用向导创建第一条规则"))
                 StartRuleWizard();
             return;
         }
 
-        foreach (var group in profile.Groups)
+        foreach (var group in profile.Groups.ToArray())
         {
             if (!ImGui.CollapsingHeader($"{group.Name} ({group.Rules.Count})##MyGroup{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
                 continue;
+
+            if (ImGui.SmallButton($"新建规则到这个分组##MyAddRule{group.Id}"))
+            {
+                ruleWizardGroupId = group.Id;
+                StartRuleWizard();
+                ruleWizardGroupId = group.Id;
+            }
+
+            ImGui.SameLine();
+            ImGui.BeginDisabled(profile.Groups.Count <= 1);
+            var deleteGroup = ImGui.SmallButton($"删除分组##MyDeleteGroup{group.Id}");
+            ImGui.EndDisabled();
+            if (deleteGroup)
+            {
+                DeleteGroup(group);
+                break;
+            }
 
             if (group.Rules.Count == 0)
             {
