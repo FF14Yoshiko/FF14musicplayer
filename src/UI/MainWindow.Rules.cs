@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Windows.Forms;
 using AllTimeSoundTrigger.ConfigurationModels;
 using AllTimeSoundTrigger.Services;
+using AllTimeSoundTrigger.Utilities;
 using Dalamud.Bindings.ImGui;
 
 namespace AllTimeSoundTrigger.UI;
@@ -1254,21 +1255,119 @@ public sealed partial class MainWindow
     private void DeleteGroup(RuleGroupDefinition group)
     {
         var profile = profileStorageService.ActiveProfile;
+        var deletedGroupName = group.Name;
+        var deletedRuleIds = group.Rules
+            .Select(rule => rule.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var candidateSoundIds = CollectRuleSoundIds(group.Rules);
+        var candidateFilePaths = CollectRuleFilePaths(group.Rules);
+        var deletedRuleCount = group.Rules.Count;
+
         if (profile.Groups.Count <= 1)
         {
-            rulesEditorMessage = "至少需要保留一个分组。";
-            return;
+            group.Rules.Clear();
+            group.Name = "默认分组";
+            group.Normalize("默认分组");
+            selectedGroupId = group.Id;
+        }
+        else
+        {
+            profile.Groups.Remove(group);
+            selectedGroupId = profile.Groups.FirstOrDefault()?.Id;
         }
 
-        profile.Groups.Remove(group);
-        var fallbackGroup = profile.GetOrCreateDefaultGroup();
-        fallbackGroup.Rules.AddRange(group.Rules);
+        foreach (var ruleId in deletedRuleIds)
+            exportRuleIds.Remove(ruleId);
         exportGroupIds.Remove(group.Id);
-        selectedGroupId = fallbackGroup.Id;
-        if (group.Rules.Exists(rule => string.Equals(rule.Id, selectedRuleId, StringComparison.Ordinal)))
-            selectedRuleId = fallbackGroup.Rules.FirstOrDefault()?.Id;
 
-        SaveRules($"已删除分组：{group.Name}，规则已移入“{fallbackGroup.Name}”。");
+        if (selectedRuleId != null && deletedRuleIds.Contains(selectedRuleId))
+            selectedRuleId = profile.EnumerateRules().FirstOrDefault()?.Id;
+
+        var removedSounds = DeleteUnusedSounds(candidateSoundIds, candidateFilePaths);
+        SaveRules(BuildDeleteGroupMessage(deletedGroupName, deletedRuleCount, removedSounds.SoundEntries, removedSounds.Files));
+    }
+
+    private (int SoundEntries, int Files) DeleteUnusedSounds(
+        IReadOnlyCollection<string> candidateSoundIds,
+        IReadOnlyCollection<string> candidateFilePaths)
+    {
+        var remainingRules = profileStorageService.ActiveProfile.EnumerateRules().ToArray();
+        var remainingSoundIds = CollectRuleSoundIds(remainingRules);
+        var remainingFilePaths = CollectRuleFilePaths(remainingRules);
+        var removedSoundEntries = 0;
+        var removedFiles = 0;
+
+        foreach (var soundId in candidateSoundIds.Where(soundId => !remainingSoundIds.Contains(soundId)))
+        {
+            var entry = configuration.SoundLibrary.FindById(soundId);
+            if (entry == null)
+                continue;
+
+            var path = entry.FilePath;
+            configuration.SoundLibrary.Entries.Remove(entry);
+            removedSoundEntries++;
+            if (DeleteManagedSoundFileIfUnused(path))
+                removedFiles++;
+        }
+
+        foreach (var filePath in candidateFilePaths.Where(filePath => !remainingFilePaths.Contains(filePath)))
+        {
+            if (DeleteManagedSoundFileIfUnused(filePath))
+                removedFiles++;
+        }
+
+        if (removedSoundEntries > 0 || removedFiles > 0)
+            configuration.Save();
+
+        return (removedSoundEntries, removedFiles);
+    }
+
+    private HashSet<string> CollectRuleSoundIds(IEnumerable<RuleDefinition> rules)
+    {
+        var soundIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in rules.SelectMany(rule => rule.Actions ?? []))
+        {
+            foreach (var soundId in GetSelectedSoundIds(action))
+                soundIds.Add(soundId);
+        }
+
+        return soundIds;
+    }
+
+    private static HashSet<string> CollectRuleFilePaths(IEnumerable<RuleDefinition> rules)
+    {
+        var filePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in rules.SelectMany(rule => rule.Actions ?? []))
+        {
+            var filePath = FilePathText.Normalize(action.FilePath);
+            if (filePath.Length > 0)
+                filePaths.Add(filePath);
+
+            foreach (var item in action.FilePaths ?? [])
+            {
+                var normalized = FilePathText.Normalize(item);
+                if (normalized.Length > 0)
+                    filePaths.Add(normalized);
+            }
+        }
+
+        return filePaths;
+    }
+
+    private static string BuildDeleteGroupMessage(string groupName, int deletedRules, int deletedSounds, int deletedFiles)
+    {
+        var parts = new List<string>
+        {
+            $"已彻底删除分组：{groupName}",
+            $"规则 {deletedRules} 条"
+        };
+
+        if (deletedSounds > 0)
+            parts.Add($"音效 {deletedSounds} 个");
+        if (deletedFiles > 0)
+            parts.Add($"本地文件 {deletedFiles} 个");
+
+        return string.Join("，", parts) + "。";
     }
 
     private ActionDefinition CreateDefaultSoundAction()

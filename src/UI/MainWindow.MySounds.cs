@@ -90,9 +90,7 @@ public sealed partial class MainWindow
             }
 
             ImGui.SameLine();
-            ImGui.BeginDisabled(profile.Groups.Count <= 1);
             var deleteGroup = ImGui.SmallButton($"删除分组##MyDeleteGroup{group.Id}");
-            ImGui.EndDisabled();
             if (deleteGroup)
             {
                 DeleteGroup(group);
