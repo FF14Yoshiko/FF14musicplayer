@@ -534,7 +534,8 @@ public sealed partial class MainWindow
     {
         try
         {
-            var importedProfile = sfxPackService.Import(importPackagePath);
+            var importedProfile = sfxPackService.Import(importPackagePath, configuration.SoundLibrary);
+            configuration.Save();
             profileStorageService.ActiveProfile.Groups.AddRange(importedProfile.Groups);
             selectedRuleId = importedProfile.EnumerateRules().FirstOrDefault()?.Id;
             selectedGroupId = importedProfile.Groups.FirstOrDefault()?.Id;
@@ -551,7 +552,8 @@ public sealed partial class MainWindow
     {
         try
         {
-            var importedProfile = sfxPackService.Import(importPackagePath);
+            var importedProfile = sfxPackService.Import(importPackagePath, configuration.SoundLibrary);
+            configuration.Save();
             var newProfile = profileStorageService.CreateProfile(importedProfile.Name);
             newProfile.Groups = importedProfile.Groups;
             profileStorageService.SwitchProfile(newProfile.Id, configuration);
@@ -587,12 +589,20 @@ public sealed partial class MainWindow
             ImGui.PushID(group.Id);
             selectedGroupId ??= group.Id;
 
+            var groupState = group.Enabled ? string.Empty : "（已停用）";
             var open = ImGui.TreeNodeEx(
-                $"{group.Name} ({group.Rules.Count})##GroupTree",
+                $"{group.Name}{groupState} ({group.Rules.Count})##GroupTree",
                 ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanFullWidth);
 
             ImGui.Indent(22f);
             DrawInputText("分组名##GroupName", group.Name, 120, value => group.Name = value);
+
+            var groupEnabled = group.Enabled;
+            if (ImGui.Checkbox("分组启用##GroupEnabled", ref groupEnabled))
+            {
+                group.Enabled = groupEnabled;
+                SaveRules(group.Enabled ? $"已启用分组：{group.Name}" : $"已停用分组：{group.Name}");
+            }
 
             if (ImGui.SmallButton("选中分组"))
                 selectedGroupId = group.Id;

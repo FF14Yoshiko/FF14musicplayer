@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using AllTimeSoundTrigger.Audio;
 using AllTimeSoundTrigger.ConfigurationModels;
 using Dalamud.Bindings.ImGui;
 
@@ -79,9 +80,18 @@ public sealed partial class MainWindow
 
         foreach (var group in profile.Groups.ToArray())
         {
-            if (!ImGui.CollapsingHeader($"{group.Name} ({group.Rules.Count})##MyGroup{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
+            var groupState = group.Enabled ? string.Empty : "（已停用）";
+            if (!ImGui.CollapsingHeader($"{group.Name}{groupState} ({group.Rules.Count})##MyGroup{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
                 continue;
 
+            var groupEnabled = group.Enabled;
+            if (ImGui.SmallButton(groupEnabled ? $"停用分组##MyDisableGroup{group.Id}" : $"启用分组##MyEnableGroup{group.Id}"))
+            {
+                group.Enabled = !groupEnabled;
+                SaveRules(group.Enabled ? $"已启用分组：{group.Name}" : $"已停用分组：{group.Name}");
+            }
+
+            ImGui.SameLine();
             if (ImGui.SmallButton($"新建规则到这个分组##MyAddRule{group.Id}"))
             {
                 ruleWizardGroupId = group.Id;
@@ -97,6 +107,9 @@ public sealed partial class MainWindow
                 break;
             }
 
+            if (!group.Enabled)
+                ImGui.TextColored(new Vector4(1f, 0.78f, 0.30f, 1f), "这个分组已停用，里面的规则暂时不会触发。");
+
             if (group.Rules.Count == 0)
             {
                 ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "这个分组里还没有规则。");
@@ -105,6 +118,8 @@ public sealed partial class MainWindow
 
             foreach (var rule in group.Rules)
                 DrawRuleSummaryCard(group, rule);
+
+            DrawGroupSoundVolumeControls(group);
         }
     }
 
@@ -132,6 +147,75 @@ public sealed partial class MainWindow
 
         ImGui.EndChild();
         ImGui.PopID();
+    }
+
+    private void DrawGroupSoundVolumeControls(RuleGroupDefinition group)
+    {
+        var entries = GetGroupSoundLibraryEntries(group);
+        if (entries.Count == 0)
+            return;
+
+        ImGui.Spacing();
+        if (!ImGui.TreeNodeEx($"这个分组的音效音量 ({entries.Count})##GroupSoundVolumes{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        foreach (var entry in entries)
+        {
+            ImGui.PushID($"GroupSoundVolume{group.Id}{entry.Id}");
+            ImGui.TextUnformatted(entry.Name);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(170f);
+            var volume = entry.DefaultVolume;
+            if (ImGui.SliderFloat("##Volume", ref volume, 0f, 1f, "%.2f"))
+            {
+                entry.DefaultVolume = Math.Clamp(volume, 0f, 1f);
+                audioPlaybackService.RefreshActiveVolumeForFile(entry.FilePath, entry.DefaultVolume);
+            }
+
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                entry.Normalize();
+                configuration.Save();
+                reloadRules();
+                windowMessage = $"已更新音效音量：{entry.Name} / {entry.DefaultVolume:0.00}";
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("测试"))
+                TestGroupSound(entry);
+
+            ImGui.PopID();
+        }
+
+        ImGui.TreePop();
+    }
+
+    private IReadOnlyList<SoundLibraryEntry> GetGroupSoundLibraryEntries(RuleGroupDefinition group)
+    {
+        var soundIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in group.Rules.SelectMany(rule => rule.Actions ?? []))
+        {
+            foreach (var soundId in GetSelectedSoundIds(action))
+                soundIds.Add(soundId);
+        }
+
+        return configuration.SoundLibrary.Entries
+            .Where(entry => soundIds.Contains(entry.Id))
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private void TestGroupSound(SoundLibraryEntry entry)
+    {
+        var played = audioPlaybackService.Play(new AudioPlaybackRequest
+        {
+            FilePath = entry.FilePath,
+            Volume = entry.DefaultVolume,
+            Priority = entry.Priority,
+            InterruptLowerPriority = entry.InterruptLowerPriority
+        });
+
+        windowMessage = played ? $"正在测试：{entry.Name}" : $"测试失败：{entry.Name}";
     }
 
     private void StartRuleWizard()

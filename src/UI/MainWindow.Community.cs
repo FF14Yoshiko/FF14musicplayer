@@ -290,7 +290,8 @@ public sealed partial class MainWindow
 
     private void InstallDownloadedCommunityPack(CommunityPackInfo pack, string packagePath)
     {
-        var importedProfile = sfxPackService.Import(packagePath);
+        var importedProfile = sfxPackService.Import(packagePath, configuration.SoundLibrary);
+        configuration.Save();
         var targetProfile = profileStorageService.ActiveProfile;
         var importedRules = importedProfile.EnumerateRules().ToList();
         if (importedRules.Count == 0)

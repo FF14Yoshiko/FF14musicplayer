@@ -227,7 +227,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void ReloadRulesFromConfiguration()
     {
-        var rules = ruleFactory.CreateRules(profileStorageService.GetActiveRules());
+        var rules = ruleFactory.CreateRules(profileStorageService.GetRuntimeRules());
         rulesEngine.ReplaceRules(rules);
         eventLogService.AddSystemMessage($"已从方案“{profileStorageService.ActiveProfile.Name}”加载 {rules.Count} 条启用规则。");
         log.Information(

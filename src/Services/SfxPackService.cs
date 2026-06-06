@@ -16,6 +16,7 @@ namespace AllTimeSoundTrigger.Services;
 public sealed class SfxPackService
 {
     private const string ProfileEntryName = "profile.json";
+    private const string SoundLibraryEntryName = "sound-library.json";
     private const string SubmissionEntryName = "submission.json";
     private const string SoundsPrefix = "sounds/";
     private const string CoversPrefix = "covers/";
@@ -112,6 +113,9 @@ public sealed class SfxPackService
             return SfxPackExportResult.Fail("请至少勾选一个分组或规则。");
 
         var sourceToZipPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var directPathToSoundId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var soundIdToPackageId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var packSoundLibrary = new SfxPackSoundLibrary();
         var missingSounds = new List<string>();
         var exportedSounds = new List<(string SourcePath, string ZipPath)>();
 
@@ -120,8 +124,8 @@ public sealed class SfxPackService
             if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var exportedActionPaths = new List<string>();
-            foreach (var soundRef in ResolveSoundPaths(action, soundLibrary))
+            var exportedActionSoundIds = new List<string>();
+            foreach (var soundRef in ResolveSoundReferences(action, soundLibrary))
             {
                 if (string.IsNullOrWhiteSpace(soundRef.SourcePath) || !File.Exists(soundRef.SourcePath))
                 {
@@ -137,16 +141,50 @@ public sealed class SfxPackService
                     exportedSounds.Add((sourcePath, zipPath));
                 }
 
-                exportedActionPaths.Add(zipPath);
+                var packageSoundId = soundRef.SoundId;
+                if (string.IsNullOrWhiteSpace(packageSoundId))
+                {
+                    if (!directPathToSoundId.TryGetValue(sourcePath, out packageSoundId))
+                    {
+                        packageSoundId = BuildUniqueSoundId(Path.GetFileNameWithoutExtension(sourcePath), packSoundLibrary.Sounds.Select(sound => sound.Id));
+                        directPathToSoundId[sourcePath] = packageSoundId;
+                    }
+                }
+                else
+                {
+                    var originalSoundId = packageSoundId;
+                    if (!soundIdToPackageId.TryGetValue(originalSoundId, out packageSoundId))
+                    {
+                        packageSoundId = packSoundLibrary.Sounds.Any(sound => sound.Id.Equals(originalSoundId, StringComparison.OrdinalIgnoreCase))
+                            ? BuildUniqueSoundId(originalSoundId, packSoundLibrary.Sounds.Select(sound => sound.Id))
+                            : MakeSafeSoundId(originalSoundId);
+                        soundIdToPackageId[originalSoundId] = packageSoundId;
+                    }
+                }
+
+                if (!packSoundLibrary.Sounds.Any(sound => sound.Id.Equals(packageSoundId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    packSoundLibrary.Sounds.Add(new SfxPackSoundEntry
+                    {
+                        Id = packageSoundId,
+                        Name = string.IsNullOrWhiteSpace(soundRef.Name) ? Path.GetFileNameWithoutExtension(sourcePath) : soundRef.Name,
+                        ZipPath = zipPath,
+                        DefaultVolume = soundRef.DefaultVolume,
+                        Priority = soundRef.Priority,
+                        InterruptLowerPriority = soundRef.InterruptLowerPriority
+                    });
+                }
+
+                exportedActionSoundIds.Add(packageSoundId);
             }
 
-            if (exportedActionPaths.Count == 0)
+            if (exportedActionSoundIds.Count == 0)
                 continue;
 
-            action.SoundId = string.Empty;
-            action.SoundIds = [];
-            action.FilePath = exportedActionPaths[0];
-            action.FilePaths = exportedActionPaths.Count > 1 ? exportedActionPaths : [];
+            action.SoundId = exportedActionSoundIds[0];
+            action.SoundIds = exportedActionSoundIds.Count > 1 ? exportedActionSoundIds : [];
+            action.FilePath = string.Empty;
+            action.FilePaths = [];
         }
 
         var outputDirectory = Path.GetDirectoryName(outputPath);
@@ -165,6 +203,9 @@ public sealed class SfxPackService
 
             foreach (var sound in exportedSounds)
                 archive.CreateEntryFromFile(sound.SourcePath, sound.ZipPath, CompressionLevel.Optimal);
+
+            if (packSoundLibrary.Sounds.Count > 0)
+                AddTextEntry(archive, SoundLibraryEntryName, JsonSerializer.Serialize(packSoundLibrary, SerializerOptions));
 
             if (!string.IsNullOrWhiteSpace(readme))
             {
@@ -321,12 +362,13 @@ public sealed class SfxPackService
         return manifest;
     }
 
-    public ProfileDefinition Import(string packagePath)
+    public ProfileDefinition Import(string packagePath, SoundLibraryConfiguration soundLibrary)
     {
         var inputPath = FilePathText.Normalize(packagePath);
         using var archive = ZipFile.OpenRead(inputPath);
         var profile = ReadProfile(archive);
         RegenerateIds(profile);
+        soundLibrary.Normalize();
 
         var importDirectory = Path.Combine(
             ImportSoundDirectory,
@@ -334,24 +376,51 @@ public sealed class SfxPackService
         Directory.CreateDirectory(importDirectory);
 
         var extractedSounds = ExtractSounds(archive, importDirectory);
-        foreach (var action in profile.EnumerateRules().SelectMany(rule => rule.Actions))
+        var packSoundLibrary = ReadOptionalSoundLibrary(archive);
+        if (packSoundLibrary.Sounds.Count > 0)
         {
-            if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var importedPaths = new List<string>();
-            foreach (var path in GetActionFilePaths(action))
+            var soundIdMap = ImportSoundLibraryEntries(packSoundLibrary, extractedSounds, soundLibrary);
+            foreach (var action in profile.EnumerateRules().SelectMany(rule => rule.Actions))
             {
-                var relativePath = NormalizeZipPath(path);
-                importedPaths.Add(extractedSounds.TryGetValue(relativePath, out var extractedPath)
-                    ? extractedPath
-                    : path);
-            }
+                if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-            action.SoundId = string.Empty;
-            action.SoundIds = [];
-            action.FilePath = importedPaths.Count > 0 ? importedPaths[0] : action.FilePath;
-            action.FilePaths = importedPaths.Count > 1 ? importedPaths : [];
+                var importedSoundIds = GetActionSoundIds(action)
+                    .Select(soundId => soundIdMap.TryGetValue(soundId, out var importedSoundId) ? importedSoundId : soundId)
+                    .Where(soundId => !string.IsNullOrWhiteSpace(soundId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (importedSoundIds.Count == 0)
+                    continue;
+
+                action.SoundId = importedSoundIds[0];
+                action.SoundIds = importedSoundIds.Count > 1 ? importedSoundIds : [];
+                action.FilePath = string.Empty;
+                action.FilePaths = [];
+            }
+        }
+        else
+        {
+            foreach (var action in profile.EnumerateRules().SelectMany(rule => rule.Actions))
+            {
+                if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var importedPaths = new List<string>();
+                foreach (var path in GetActionFilePaths(action))
+                {
+                    var relativePath = NormalizeZipPath(path);
+                    importedPaths.Add(extractedSounds.TryGetValue(relativePath, out var extractedPath)
+                        ? extractedPath
+                        : path);
+                }
+
+                action.SoundId = string.Empty;
+                action.SoundIds = [];
+                action.FilePath = importedPaths.Count > 0 ? importedPaths[0] : action.FilePath;
+                action.FilePaths = importedPaths.Count > 1 ? importedPaths : [];
+            }
         }
 
         profile.Normalize();
@@ -403,7 +472,7 @@ public sealed class SfxPackService
         => JsonSerializer.Deserialize<RuleDefinition>(JsonSerializer.Serialize(rule, SerializerOptions), SerializerOptions)
             ?? throw new InvalidOperationException("无法复制规则。");
 
-    private static IReadOnlyList<SoundPathReference> ResolveSoundPaths(ActionDefinition action, SoundLibraryConfiguration soundLibrary)
+    private static IReadOnlyList<SoundExportReference> ResolveSoundReferences(ActionDefinition action, SoundLibraryConfiguration soundLibrary)
     {
         var soundIds = GetActionSoundIds(action);
         if (soundIds.Count > 0)
@@ -412,13 +481,27 @@ public sealed class SfxPackService
                 .Select(soundId =>
                 {
                     var entry = soundLibrary.FindById(soundId);
-                    return new SoundPathReference(entry?.FilePath ?? string.Empty, soundId);
+                    return new SoundExportReference(
+                        entry?.FilePath ?? string.Empty,
+                        soundId,
+                        soundId,
+                        entry?.Name ?? soundId,
+                        entry?.DefaultVolume ?? action.Volume,
+                        entry?.Priority ?? action.Priority,
+                        entry?.InterruptLowerPriority ?? action.InterruptLowerPriority);
                 })
                 .ToArray();
         }
 
         return GetActionFilePaths(action)
-            .Select(path => new SoundPathReference(path, path))
+            .Select(path => new SoundExportReference(
+                path,
+                path,
+                string.Empty,
+                Path.GetFileNameWithoutExtension(path),
+                action.Volume,
+                action.Priority,
+                action.InterruptLowerPriority))
             .ToArray();
     }
 
@@ -456,7 +539,14 @@ public sealed class SfxPackService
         return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    private readonly record struct SoundPathReference(string SourcePath, string DisplayName);
+    private readonly record struct SoundExportReference(
+        string SourcePath,
+        string DisplayName,
+        string SoundId,
+        string Name,
+        float DefaultVolume,
+        int Priority,
+        bool InterruptLowerPriority);
 
     private static string BuildUniqueSoundZipPath(string sourcePath, IEnumerable<string> usedPaths)
     {
@@ -497,6 +587,55 @@ public sealed class SfxPackService
         using var stream = entry.Open();
         using var reader = new StreamReader(stream, Encoding.UTF8, true);
         return reader.ReadToEnd();
+    }
+
+    private static SfxPackSoundLibrary ReadOptionalSoundLibrary(ZipArchive archive)
+    {
+        var entry = archive.Entries.FirstOrDefault(item => item.FullName.Equals(SoundLibraryEntryName, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+            return new SfxPackSoundLibrary();
+
+        using var stream = entry.Open();
+        var soundLibrary = JsonSerializer.Deserialize<SfxPackSoundLibrary>(stream, SerializerOptions)
+            ?? new SfxPackSoundLibrary();
+        soundLibrary.Normalize();
+        return soundLibrary;
+    }
+
+    private static Dictionary<string, string> ImportSoundLibraryEntries(
+        SfxPackSoundLibrary packSoundLibrary,
+        IReadOnlyDictionary<string, string> extractedSounds,
+        SoundLibraryConfiguration targetSoundLibrary)
+    {
+        var soundIdMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var reservedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var packSound in packSoundLibrary.Sounds)
+        {
+            var zipPath = NormalizeZipPath(packSound.ZipPath);
+            if (zipPath.Length == 0 || !extractedSounds.TryGetValue(zipPath, out var extractedPath))
+                continue;
+
+            var importedId = BuildUniqueSoundLibraryId(packSound.Id, targetSoundLibrary, reservedIds);
+            reservedIds.Add(importedId);
+            soundIdMap[packSound.Id] = importedId;
+
+            var entry = new SoundLibraryEntry
+            {
+                Id = importedId,
+                Name = string.IsNullOrWhiteSpace(packSound.Name)
+                    ? Path.GetFileNameWithoutExtension(extractedPath)
+                    : packSound.Name,
+                FilePath = extractedPath,
+                DefaultVolume = packSound.DefaultVolume,
+                Priority = packSound.Priority,
+                InterruptLowerPriority = packSound.InterruptLowerPriority
+            };
+            entry.Normalize();
+            targetSoundLibrary.Entries.Add(entry);
+        }
+
+        return soundIdMap;
     }
 
     private static void AddTextEntry(ZipArchive archive, string entryName, string text)
@@ -586,6 +725,52 @@ public sealed class SfxPackService
     private static string NormalizeZipPath(string path)
         => (path ?? string.Empty).Replace('\\', '/').TrimStart('/');
 
+    private static string BuildUniqueSoundLibraryId(
+        string requestedId,
+        SoundLibraryConfiguration soundLibrary,
+        ISet<string> reservedIds)
+    {
+        var baseId = MakeSafeSoundId(requestedId);
+        var candidate = baseId;
+        var index = 2;
+        while (reservedIds.Contains(candidate)
+               || soundLibrary.Entries.Any(entry => entry.Id.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidate = $"{baseId}_{index}";
+            index++;
+        }
+
+        return candidate;
+    }
+
+    private static string BuildUniqueSoundId(string requestedId, IEnumerable<string> usedIds)
+    {
+        var used = new HashSet<string>(usedIds, StringComparer.OrdinalIgnoreCase);
+        var baseId = MakeSafeSoundId(requestedId);
+        var candidate = baseId;
+        var index = 2;
+        while (used.Contains(candidate))
+        {
+            candidate = $"{baseId}_{index}";
+            index++;
+        }
+
+        return candidate;
+    }
+
+    private static string MakeSafeSoundId(string requestedId)
+    {
+        var value = string.IsNullOrWhiteSpace(requestedId)
+            ? Guid.NewGuid().ToString("N")
+            : requestedId.Trim();
+
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            value = value.Replace(invalid, '_');
+
+        value = value.Replace('/', '_').Replace('\\', '_');
+        return string.IsNullOrWhiteSpace(value) ? Guid.NewGuid().ToString("N") : value;
+    }
+
     private static string MakeSafeFileName(string name)
     {
         var value = string.IsNullOrWhiteSpace(name) ? "sfxpack" : name.Trim();
@@ -593,6 +778,57 @@ public sealed class SfxPackService
             value = value.Replace(invalid, '_');
 
         return value;
+    }
+}
+
+public sealed class SfxPackSoundLibrary
+{
+    public int Version { get; set; } = 1;
+
+    public List<SfxPackSoundEntry> Sounds { get; set; } = [];
+
+    public void Normalize()
+    {
+        if (Version <= 0)
+            Version = 1;
+
+        Sounds ??= [];
+        for (var i = Sounds.Count - 1; i >= 0; i--)
+        {
+            if (Sounds[i] == null)
+            {
+                Sounds.RemoveAt(i);
+                continue;
+            }
+
+            Sounds[i].Normalize();
+            if (string.IsNullOrWhiteSpace(Sounds[i].Id) || string.IsNullOrWhiteSpace(Sounds[i].ZipPath))
+                Sounds.RemoveAt(i);
+        }
+    }
+}
+
+public sealed class SfxPackSoundEntry
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string ZipPath { get; set; } = string.Empty;
+
+    public float DefaultVolume { get; set; } = 1f;
+
+    public int Priority { get; set; }
+
+    public bool InterruptLowerPriority { get; set; } = true;
+
+    public void Normalize()
+    {
+        Id = (Id ?? string.Empty).Trim();
+        Name = (Name ?? string.Empty).Trim();
+        ZipPath = (ZipPath ?? string.Empty).Replace('\\', '/').TrimStart('/');
+        DefaultVolume = Math.Clamp(DefaultVolume, 0f, 1f);
+        Priority = Math.Clamp(Priority, -100, 100);
     }
 }
 

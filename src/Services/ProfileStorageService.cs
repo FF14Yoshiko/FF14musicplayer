@@ -97,6 +97,9 @@ public sealed class ProfileStorageService
     public IReadOnlyList<RuleDefinition> GetActiveRules()
         => ActiveProfile.EnumerateRules().ToArray();
 
+    public IReadOnlyList<RuleDefinition> GetRuntimeRules()
+        => ActiveProfile.EnumerateRuntimeRules().ToArray();
+
     public RuleGroupDefinition GetOrCreateDefaultGroup()
     {
         var group = ActiveProfile.GetOrCreateDefaultGroup();

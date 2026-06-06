@@ -10,6 +10,8 @@ public sealed class RuleGroupDefinition
 
     public string Name { get; set; } = string.Empty;
 
+    public bool Enabled { get; set; } = true;
+
     public List<RuleDefinition> Rules { get; set; } = [];
 
     public void Normalize(string fallbackName)

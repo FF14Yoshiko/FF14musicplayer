@@ -20,6 +20,12 @@ public sealed class ProfileDefinition
     public IEnumerable<RuleDefinition> EnumerateRules()
         => Groups.SelectMany(group => group.Rules);
 
+    public IEnumerable<RuleDefinition> EnumerateRuntimeRules()
+        => Groups
+            .Where(group => group.Enabled)
+            .SelectMany(group => group.Rules)
+            .Where(rule => rule.Enabled);
+
     public RuleGroupDefinition GetOrCreateDefaultGroup()
     {
         Groups ??= [];

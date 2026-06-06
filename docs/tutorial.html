@@ -139,12 +139,62 @@
       gap: 16px;
     }
 
+    .path-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
     .card {
       padding: 18px;
     }
 
     .card p + p {
       margin-top: 10px;
+    }
+
+    .step-list {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      position: relative;
+      padding: 14px 16px 14px 58px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface-soft);
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--blue);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .step strong {
+      color: var(--text);
+    }
+
+    .button-name {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 8px;
+      background: #e8f1ff;
+      color: var(--blue);
+      font-weight: 700;
     }
 
     .figure {
@@ -222,85 +272,132 @@
   <main>
     <header class="hero">
       <div class="eyebrow">本地离线教程</div>
-      <h1>全时刻音效触发器，新手照着点就能响</h1>
+      <h1>全时刻音效触发器：照着点，先让它响起来</h1>
       <p class="lead">
-        这个页面是插件自己带的，不用去 GitHub，也不用记文件路径。
-        你只要按首页按钮走：安装社区包、自己做规则，或者去日志里看它有没有命中。
+        这个教程就在本地，不用打开 GitHub。你不用理解 JSON、SoundId、路径这些词。
+        只要先选下面三件事之一：装别人做好的、自己做一条、或者排查为什么没响。
       </p>
       <div class="chips">
         <span class="chip">打开窗口：<code>/atsound</code></span>
-        <span class="chip">首页三大按钮</span>
-        <span class="chip">社区包直接装</span>
-        <span class="chip">做规则走向导</span>
-        <span class="chip">没响看日志</span>
+        <span class="chip">普通用户只看 5 个标签页</span>
+        <span class="chip">社区包自动新建分组</span>
+        <span class="chip">规则用向导创建</span>
+        <span class="chip">不响先看日志</span>
       </div>
     </header>
 
     <section class="panel">
-      <h2>先看全流程</h2>
-      <p>这张图先帮你把路走一遍。你不用一次记住所有按钮，只要知道顺序就行。</p>
+      <h2>先选你要做什么</h2>
+      <div class="path-grid">
+        <article class="card">
+          <h3>我想装别人做好的</h3>
+          <p>点首页的 <span class="button-name">安装社区音效包</span>。</p>
+          <p>进社区页后点刷新，看到喜欢的包就点安装。插件会自己新建分组。</p>
+          <span class="badge">最适合第一次体验</span>
+        </article>
+        <article class="card">
+          <h3>我想自己做一条</h3>
+          <p>先去 <span class="button-name">音效库</span> 导入 mp3/wav/ogg。</p>
+          <p>再去 <span class="button-name">我的音效</span> 点新建规则向导，按四步走。</p>
+          <span class="badge">不用手写配置</span>
+        </article>
+        <article class="card">
+          <h3>我点了但是没响</h3>
+          <p>先打开 <span class="button-name">日志</span>。</p>
+          <p>看有没有“事件”“规则命中”“播放音效”。缺哪一段，就排查哪一段。</p>
+          <span class="badge">最快定位问题</span>
+        </article>
+      </div>
+      <div class="note">
+        <strong>记住一句话：</strong>下载别人的去“社区音效包”，管理自己的去“我的音效”，导入文件去“音效库”，查问题去“日志”。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>第一次使用，按这个顺序来</h2>
+      <p>下面这 5 步是最稳的路线。做完后，你应该能听到第一条音效。</p>
       <div class="figure">
         <img src="images/install-flow.svg" alt="插件入门流程图">
       </div>
-      <div class="note">
-        <strong>最省心的做法：</strong>从首页点“自己做一个音效规则”，按向导选“使用指定技能时”，再选一个音效。
-        这样你很快就能确认插件有没有正常工作。普通用户不用管高级模式。
+      <div class="step-list">
+        <div class="step">
+          <p><strong>输入 <span class="inline-code">/atsound</span> 打开插件窗口。</strong></p>
+          <p>看到“首页、社区音效包、我的音效、音效库、日志”就对了。</p>
+        </div>
+        <div class="step">
+          <p><strong>去 <span class="inline-code">音效库</span> 导入一个音频文件。</strong></p>
+          <p>选 mp3、wav、ogg 都可以。导入后可以点“测试”，先确认文件能播放。</p>
+        </div>
+        <div class="step">
+          <p><strong>去 <span class="inline-code">我的音效</span>，点“新建规则向导”。</strong></p>
+          <p>新手建议先选“使用指定技能时”，技能名填你自己常用的技能。</p>
+        </div>
+        <div class="step">
+          <p><strong>第三步选择刚才导入的音效，第四步保存。</strong></p>
+          <p>可以选多个音效。选多个时，触发后会随机播放其中一条。</p>
+        </div>
+        <div class="step">
+          <p><strong>回游戏里用这个技能，再看 <span class="inline-code">日志</span>。</strong></p>
+          <p>日志里看到“事件到达、规则命中、播放音效”，这条链路就通了。</p>
+        </div>
       </div>
     </section>
 
     <section class="grid">
       <article class="card">
-        <h3>1. 先把音效放进库</h3>
-        <p>打开 <span class="inline-code">音效库</span> 标签页，点 <span class="inline-code">导入音效文件</span>。</p>
-        <p>一次可以选多个 <span class="inline-code">mp3</span>、<span class="inline-code">wav</span> 或 <span class="inline-code">ogg</span>。</p>
+        <h3>导入自己的音效</h3>
+        <p>点 <span class="inline-code">音效库</span>，再点 <span class="inline-code">导入音效文件</span>。</p>
+        <p>选好文件后，列表里会出现这个音效。先点 <span class="inline-code">测试</span>，听得到再做规则。</p>
         <div class="figure">
           <img src="images/import-sound.svg" alt="导入音效流程图">
         </div>
-        <span class="badge">先导入，再选规则里的音效</span>
+        <span class="badge">先测试能不能播放</span>
       </article>
 
       <article class="card">
-        <h3>2. 做一条最简单的规则</h3>
-        <p>打开 <span class="inline-code">我的音效</span> 标签页，点 <span class="inline-code">新建规则向导</span>。</p>
-        <p>第一步选什么时候响，第二步填技能名、Buff 名或地图，第三步选择音效，第四步保存到分组。</p>
+        <h3>自己做一条规则</h3>
+        <p>点 <span class="inline-code">我的音效</span>，再点 <span class="inline-code">新建规则向导</span>。</p>
+        <p>四步照着填：什么时候响、具体是什么、播放什么、保存到哪里。</p>
         <div class="figure">
           <img src="images/create-rule.svg" alt="创建规则流程图">
         </div>
-        <span class="badge">不用手写 JSON，不用看英文类型</span>
+        <span class="badge">不会填就先用默认值</span>
       </article>
 
       <article class="card">
-        <h3>3. 想让 Buff 持续播放</h3>
-        <p>在 <span class="inline-code">新建规则向导</span> 里选择 <span class="inline-code">获得 Buff 时</span>，然后勾上 <span class="inline-code">Buff 在时循环播放，Buff 消失自动停止</span>。</p>
-        <p>这样就是 Buff 在的时候循环播，Buff 没了就停，不用你自己手动断开。</p>
+        <h3>让 Buff 在时循环播放</h3>
+        <p>新建规则时，第一步选 <span class="inline-code">获得 Buff 时</span>。</p>
+        <p>然后勾上 <span class="inline-code">Buff 在时循环播放，Buff 消失自动停止</span>。</p>
         <div class="note">
-          这个功能适合持续型语音、增益提醒、变身提示，也适合你说的“持续时间内播放，消失就断开”。
+          Buff 在，音效循环；Buff 没了，音效停。不用再额外做一条停止规则。
         </div>
       </article>
 
       <article class="card">
-        <h3>4. 想分享给别人</h3>
-        <p>到 <span class="inline-code">我的音效</span> 标签页，打开 <span class="inline-code">投稿中心</span>。</p>
-        <p>选择当前内容、某个分组，或者单条规则，插件会生成 <span class="inline-code">.sfxpack</span> 和 <span class="inline-code">投稿信息.txt</span>。</p>
+        <h3>把音效包分享给别人</h3>
+        <p>点 <span class="inline-code">我的音效</span>，打开 <span class="inline-code">投稿中心</span>。</p>
+        <p>选择要分享的内容：当前全部、某个分组，或者单条规则。</p>
         <div class="figure">
           <img src="images/share-pack.svg" alt="分享包流程图">
         </div>
-        <span class="badge">投稿文件发给作者审核后进入社区</span>
+        <span class="badge">会自动带上音频和音量</span>
       </article>
 
       <article class="card">
-        <h3>5. 想安装社区音效包</h3>
-        <p>打开 <span class="inline-code">社区</span> 标签页，点 <span class="inline-code">刷新列表</span>，看到喜欢的音效包后点 <span class="inline-code">安装</span>。</p>
-        <p>插件会自动下载 <span class="inline-code">.sfxpack</span>，并为这个音效包新建一个分组，不需要你选择位置。</p>
+        <h3>安装社区音效包</h3>
+        <p>点 <span class="inline-code">社区音效包</span>，点 <span class="inline-code">刷新列表</span>。</p>
+        <p>看到喜欢的包，点 <span class="inline-code">安装</span>。插件会自动新建分组，不会让你选文件夹。</p>
+        <p>装好后去 <span class="inline-code">我的音效</span>，可以停用这个分组，也可以调每个音效的音量。</p>
         <div class="note">
           社区列表来自 Gitee。断网时，插件会尽量显示上次缓存的列表和封面。
         </div>
       </article>
 
       <article class="card">
-        <h3>6. 想投稿到社区</h3>
-        <p>打开 <span class="inline-code">我的音效</span> 标签页里的 <span class="inline-code">投稿中心</span>，选择当前内容、某个分组或单条规则。</p>
-        <p>只需要填写包名、作者、版本，封面可以不填。作者是必填项，方便审核和展示。插件会自动生成 <span class="inline-code">.sfxpack</span> 和 <span class="inline-code">投稿信息.txt</span>。</p>
+        <h3>投稿到社区</h3>
+        <p>投稿中心里只需要填：包名、作者、版本、封面图。</p>
+        <p>封面可以不填。没写的简介、标签、说明，插件会尽量自动生成。</p>
+        <p>生成包时，会带上你本机调好的每条音效音量。</p>
         <div class="note">
           生成后把这两个文件发送到邮箱 <span class="inline-code">1104449674@qq.com</span>，或 QQ 群 <span class="inline-code">659827727</span>。审核通过后才会出现在社区列表里。
         </div>
@@ -316,6 +413,22 @@
       <details>
         <summary>为什么我填了技能名，还是所有技能都响？</summary>
         <p>通常是触发器类型选错了。请把规则的触发器选成 <span class="inline-code">使用技能</span>，不要把技能名写进动作里。</p>
+      </details>
+      <details>
+        <summary>为什么两个音效一起响？</summary>
+        <p>通常是有两条规则同时命中了。去 <span class="inline-code">我的音效</span> 看同一个分组或其他分组里有没有相似规则，可以先点 <span class="inline-code">停用分组</span> 快速排查。</p>
+      </details>
+      <details>
+        <summary>想临时关掉一个下载包怎么办？</summary>
+        <p>到 <span class="inline-code">我的音效</span> 里找到它对应的分组，点 <span class="inline-code">停用分组</span>。以后想恢复再点 <span class="inline-code">启用分组</span>。</p>
+      </details>
+      <details>
+        <summary>社区包里的某个音效太大声怎么办？</summary>
+        <p>到 <span class="inline-code">我的音效</span> 打开对应分组，在 <span class="inline-code">这个分组的音效音量</span> 里拖动音量条即可，也可以点测试试听。</p>
+      </details>
+      <details>
+        <summary>我上传后别人下回来音量不对怎么办？</summary>
+        <p>请用新版重新生成投稿包。新版分享包会带上每条音效的音量，旧版已经生成的包没有这份音量信息。</p>
       </details>
       <details>
         <summary>文件搬家之后不响了怎么办？</summary>
