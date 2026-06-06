@@ -6,6 +6,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using AllTimeSoundTrigger.Community;
+using AllTimeSoundTrigger.ConfigurationModels;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 
@@ -21,6 +22,10 @@ public sealed partial class MainWindow
     private Task<CommunityPublishResult>? communityPublishTask;
     private string communitySearchText = string.Empty;
     private string communityMessage = string.Empty;
+    private string communityInstallProfileId = string.Empty;
+    private string communityInstallGroupId = string.Empty;
+    private string communityInstallNewGroupName = string.Empty;
+    private bool communityInstallCreateGroup;
     private bool communityRefreshStarted;
 
     private void DrawCommunityTab()
@@ -67,6 +72,8 @@ public sealed partial class MainWindow
             DrawCommunityDeveloperPanel();
         }
 
+        ImGui.Separator();
+        DrawCommunityInstallTargetPanel();
         ImGui.Separator();
 
         var packs = FilterCommunityPacks(communityPackService.Packs).ToArray();
@@ -148,7 +155,7 @@ public sealed partial class MainWindow
             try
             {
                 communityInstallMessages[item.Key] = "正在导入...";
-                InstallDownloadedCommunityPack(operation.Pack, operation.DownloadTask.Result);
+                InstallDownloadedCommunityPack(operation.Pack, operation.DownloadTask.Result, operation.Target);
             }
             catch (Exception ex)
             {
@@ -286,28 +293,165 @@ public sealed partial class MainWindow
         if (communityInstallOperations.ContainsKey(pack.Id))
             return;
 
+        var target = BuildCommunityInstallTarget();
         communityInstallMessages[pack.Id] = "正在下载...";
         communityInstallOperations[pack.Id] = new CommunityInstallOperation(
             pack,
+            target,
             communityPackService.DownloadPackageAsync(pack));
     }
 
-    private void InstallDownloadedCommunityPack(CommunityPackInfo pack, string packagePath)
+    private void InstallDownloadedCommunityPack(CommunityPackInfo pack, string packagePath, CommunityInstallTarget target)
     {
         var importedProfile = sfxPackService.Import(packagePath);
-        var newProfile = profileStorageService.CreateProfile(importedProfile.Name);
-        newProfile.Groups = importedProfile.Groups;
-        profileStorageService.SwitchProfile(newProfile.Id, configuration);
-        profileStorageService.SaveActiveProfile();
+        var targetProfile = profileStorageService.Profiles.FirstOrDefault(profile => profile.Id.Equals(target.ProfileId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("找不到安装目标方案，请重新选择安装位置。");
+        var importedRules = importedProfile.EnumerateRules().ToList();
+        if (importedRules.Count == 0)
+            throw new InvalidOperationException("这个社区包里没有可导入的规则。");
 
-        selectedRuleId = newProfile.EnumerateRules().FirstOrDefault()?.Id;
-        selectedGroupId = newProfile.Groups.FirstOrDefault()?.Id;
+        RuleGroupDefinition targetGroup;
+        if (target.CreateGroup)
+        {
+            targetGroup = new RuleGroupDefinition
+            {
+                Name = string.IsNullOrWhiteSpace(target.NewGroupName) ? pack.Name : target.NewGroupName.Trim(),
+                Rules = []
+            };
+            targetProfile.Groups.Add(targetGroup);
+        }
+        else
+        {
+            targetGroup = targetProfile.Groups.FirstOrDefault(group => group.Id.Equals(target.GroupId, StringComparison.OrdinalIgnoreCase))
+                ?? targetProfile.GetOrCreateDefaultGroup();
+        }
+
+        targetGroup.Rules.AddRange(importedRules);
+        profileStorageService.SaveProfile(targetProfile);
+        profileStorageService.SwitchProfile(targetProfile.Id, configuration);
+
+        selectedRuleId = importedRules.FirstOrDefault()?.Id;
+        selectedGroupId = targetGroup.Id;
+        communityInstallProfileId = targetProfile.Id;
+        communityInstallGroupId = targetGroup.Id;
+        communityInstallCreateGroup = false;
+        communityInstallNewGroupName = string.Empty;
         exportGroupIds.Clear();
         exportRuleIds.Clear();
         communityPackService.MarkInstalled(pack);
         reloadRules();
-        communityInstallMessages[pack.Id] = $"已安装为新方案：{newProfile.Name}";
+        communityInstallMessages[pack.Id] = $"已安装到：{targetProfile.Name} / {targetGroup.Name}";
     }
+
+    private void DrawCommunityInstallTargetPanel()
+    {
+        EnsureCommunityInstallTarget();
+        if (!ImGui.CollapsingHeader("安装位置", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        ImGui.TextColored(
+            new Vector4(0.70f, 0.72f, 0.76f, 1f),
+            "安装社区音效包前，先选择要导入到哪个方案和分组。多分组音效包会合并到所选分组。");
+
+        DrawCommunityInstallProfileCombo();
+
+        var createGroup = communityInstallCreateGroup;
+        if (ImGui.Checkbox("安装时新建分组##CommunityInstallCreateGroup", ref createGroup))
+            communityInstallCreateGroup = createGroup;
+
+        if (communityInstallCreateGroup)
+        {
+            DrawInputText("新分组名，留空则使用音效包名##CommunityInstallNewGroup", communityInstallNewGroupName, 120, value => communityInstallNewGroupName = value, 320f);
+        }
+        else
+        {
+            DrawCommunityInstallGroupCombo();
+        }
+    }
+
+    private void DrawCommunityInstallProfileCombo()
+    {
+        var targetProfile = GetCommunityInstallProfile();
+        ImGui.SetNextItemWidth(260f);
+        if (!ImGui.BeginCombo("安装到方案##CommunityInstallProfile", targetProfile?.Name ?? "未选择"))
+            return;
+
+        foreach (var profile in profileStorageService.Profiles)
+        {
+            var selected = profile.Id.Equals(communityInstallProfileId, StringComparison.OrdinalIgnoreCase);
+            if (ImGui.Selectable($"{profile.Name}##CommunityInstallProfile{profile.Id}", selected))
+            {
+                communityInstallProfileId = profile.Id;
+                communityInstallGroupId = profile.Groups.FirstOrDefault()?.Id ?? string.Empty;
+                communityInstallCreateGroup = false;
+            }
+
+            if (selected)
+                ImGui.SetItemDefaultFocus();
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private void DrawCommunityInstallGroupCombo()
+    {
+        var targetProfile = GetCommunityInstallProfile();
+        if (targetProfile == null)
+            return;
+
+        var targetGroup = targetProfile.Groups.FirstOrDefault(group => group.Id.Equals(communityInstallGroupId, StringComparison.OrdinalIgnoreCase))
+            ?? targetProfile.Groups.FirstOrDefault();
+        if (targetGroup == null)
+            return;
+
+        communityInstallGroupId = targetGroup.Id;
+        ImGui.SetNextItemWidth(260f);
+        if (!ImGui.BeginCombo("安装到分组##CommunityInstallGroup", targetGroup.Name))
+            return;
+
+        foreach (var group in targetProfile.Groups)
+        {
+            var selected = group.Id.Equals(communityInstallGroupId, StringComparison.OrdinalIgnoreCase);
+            if (ImGui.Selectable($"{group.Name}##CommunityInstallGroup{group.Id}", selected))
+                communityInstallGroupId = group.Id;
+
+            if (selected)
+                ImGui.SetItemDefaultFocus();
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private CommunityInstallTarget BuildCommunityInstallTarget()
+    {
+        EnsureCommunityInstallTarget();
+        return new CommunityInstallTarget(
+            communityInstallProfileId,
+            communityInstallGroupId,
+            communityInstallCreateGroup,
+            communityInstallNewGroupName);
+    }
+
+    private void EnsureCommunityInstallTarget()
+    {
+        var targetProfile = GetCommunityInstallProfile();
+        if (targetProfile == null)
+        {
+            targetProfile = profileStorageService.ActiveProfile;
+            communityInstallProfileId = targetProfile.Id;
+        }
+
+        if (string.IsNullOrWhiteSpace(communityInstallGroupId)
+            || targetProfile.Groups.All(group => !group.Id.Equals(communityInstallGroupId, StringComparison.OrdinalIgnoreCase)))
+        {
+            communityInstallGroupId = targetProfile.Groups.FirstOrDefault()?.Id ?? string.Empty;
+        }
+    }
+
+    private ProfileDefinition? GetCommunityInstallProfile()
+        => profileStorageService.Profiles.FirstOrDefault(profile => profile.Id.Equals(communityInstallProfileId, StringComparison.OrdinalIgnoreCase))
+           ?? profileStorageService.Profiles.FirstOrDefault(profile => profile.Id.Equals(profileStorageService.ActiveProfile.Id, StringComparison.OrdinalIgnoreCase))
+           ?? profileStorageService.Profiles.FirstOrDefault();
 
     private static void OpenCommunityUrl(string target)
     {
@@ -336,5 +480,7 @@ public sealed partial class MainWindow
         return $"{value} B";
     }
 
-    private sealed record CommunityInstallOperation(CommunityPackInfo Pack, Task<string> DownloadTask);
+    private sealed record CommunityInstallTarget(string ProfileId, string GroupId, bool CreateGroup, string NewGroupName);
+
+    private sealed record CommunityInstallOperation(CommunityPackInfo Pack, CommunityInstallTarget Target, Task<string> DownloadTask);
 }
