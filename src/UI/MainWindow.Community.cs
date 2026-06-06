@@ -47,30 +47,23 @@ public sealed partial class MainWindow
         if (ImGui.Button("刷新列表"))
             StartCommunityRefresh();
 
-        ImGui.SameLine();
-        if (ImGui.Button("打开社区仓库"))
-            OpenCommunityUrl("https://gitee.com/aikyan931023/ffxiv-sfx-community");
+        if (configuration.CommunityDeveloperMode)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("打开社区仓库"))
+                OpenCommunityUrl("https://gitee.com/aikyan931023/ffxiv-sfx-community");
 
-        ImGui.SameLine();
-        if (ImGui.Button("打开缓存目录"))
-            OpenCommunityUrl(communityPackService.CacheDirectory);
+            ImGui.SameLine();
+            if (ImGui.Button("打开缓存目录"))
+                OpenCommunityUrl(communityPackService.CacheDirectory);
+        }
 
         DrawInputText("搜索##CommunitySearch", communitySearchText, 120, value => communitySearchText = value, 260f);
-        DrawDeveloperModeToggle();
 
         if (communityRefreshTask is { IsCompleted: false })
             ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "正在刷新社区列表...");
         else if (!string.IsNullOrWhiteSpace(communityMessage))
             ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), communityMessage);
-
-        ImGui.Separator();
-        DrawCommunitySubmissionPanel();
-
-        if (configuration.CommunityDeveloperMode)
-        {
-            ImGui.Separator();
-            DrawCommunityDeveloperPanel();
-        }
 
         ImGui.Separator();
         DrawCommunityInstallTargetPanel();
@@ -351,7 +344,7 @@ public sealed partial class MainWindow
 
         ImGui.TextColored(
             new Vector4(0.70f, 0.72f, 0.76f, 1f),
-            "安装社区音效包前，先选择要导入到哪个方案和分组。多分组音效包会合并到所选分组。");
+            "第一步：选择安装到哪里。第二步：在下面找到喜欢的音效包，点安装。");
 
         DrawCommunityInstallProfileCombo();
 

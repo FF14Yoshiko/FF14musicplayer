@@ -590,20 +590,6 @@ public sealed partial class MainWindow
     private static string FirstNonEmpty(params string[] values)
         => values.Select(value => (value ?? string.Empty).Trim()).FirstOrDefault(value => value.Length > 0) ?? string.Empty;
 
-    private void DrawDeveloperModeToggle()
-    {
-        var io = ImGui.GetIO();
-        if (!io.KeyCtrl || !io.KeyShift)
-            return;
-
-        ImGui.SameLine();
-        if (ImGui.SmallButton(configuration.CommunityDeveloperMode ? "关闭开发者模式" : "开发者模式"))
-        {
-            configuration.CommunityDeveloperMode = !configuration.CommunityDeveloperMode;
-            configuration.Save();
-        }
-    }
-
     private void DrawCommunityDeveloperPanel()
     {
         EnsureReviewDefaults();
@@ -612,7 +598,7 @@ public sealed partial class MainWindow
 
         ImGui.TextColored(
             new Vector4(1f, 0.72f, 0.35f, 1f),
-            "开发者模式：待审包通过后才会写入 Gitee 社区仓库，并更新 index.json。");
+            "高级模式：待审包通过后才会写入 Gitee 社区仓库，并更新 index.json。");
 
         DrawInputText("Gitee 仓库路径##ReviewRepoPath", reviewRepoPath, 520, value => reviewRepoPath = value);
         ImGui.SameLine();
@@ -663,7 +649,7 @@ public sealed partial class MainWindow
         ImGui.EndDisabled();
 
         ImGui.SameLine();
-        if (ImGui.Button("关闭开发者模式"))
+        if (ImGui.Button("关闭高级模式"))
         {
             configuration.CommunityDeveloperMode = false;
             configuration.Save();

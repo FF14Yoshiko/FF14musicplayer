@@ -225,13 +225,14 @@
       <h1>全时刻音效触发器，新手照着点就能响</h1>
       <p class="lead">
         这个页面是插件自己带的，不用去 GitHub，也不用记文件路径。
-        你只要按顺序做：先导入音效，再写规则，最后去日志里看它有没有命中。
+        你只要按首页按钮走：安装社区包、自己做规则，或者去日志里看它有没有命中。
       </p>
       <div class="chips">
         <span class="chip">打开窗口：<code>/atsound</code></span>
-        <span class="chip">先导入音效</span>
-        <span class="chip">再做规则</span>
-        <span class="chip">最后看日志</span>
+        <span class="chip">首页三大按钮</span>
+        <span class="chip">社区包直接装</span>
+        <span class="chip">做规则走向导</span>
+        <span class="chip">没响看日志</span>
       </div>
     </header>
 
@@ -242,8 +243,8 @@
         <img src="images/install-flow.svg" alt="插件入门流程图">
       </div>
       <div class="note">
-        <strong>最省心的做法：</strong>先准备一个音效文件，再建一条“使用技能就播放”的规则。
-        这样你很快就能确认插件有没有正常工作。
+        <strong>最省心的做法：</strong>从首页点“自己做一个音效规则”，按向导选“使用指定技能时”，再选一个音效。
+        这样你很快就能确认插件有没有正常工作。普通用户不用管高级模式。
       </div>
     </section>
 
@@ -260,17 +261,17 @@
 
       <article class="card">
         <h3>2. 做一条最简单的规则</h3>
-        <p>打开 <span class="inline-code">规则</span> 标签页，新建一条规则。</p>
-        <p>触发器先选 <span class="inline-code">使用技能</span>，条件先留空，动作里可以选一个音效，也可以连续添加多个音效；多个音效会在触发时随机播放其中一个。</p>
+        <p>打开 <span class="inline-code">我的音效</span> 标签页，点 <span class="inline-code">新建规则向导</span>。</p>
+        <p>第一步选什么时候响，第二步填技能名、Buff 名或地图，第三步选择音效，第四步保存到分组。</p>
         <div class="figure">
           <img src="images/create-rule.svg" alt="创建规则流程图">
         </div>
-        <span class="badge">先做能响的，再慢慢加条件</span>
+        <span class="badge">不用手写 JSON，不用看英文类型</span>
       </article>
 
       <article class="card">
         <h3>3. 想让 Buff 持续播放</h3>
-        <p>把触发器设成 <span class="inline-code">获得状态/Buff</span>，动作里勾上 <span class="inline-code">Buff 消失时自动停止</span>。</p>
+        <p>在 <span class="inline-code">新建规则向导</span> 里选择 <span class="inline-code">获得 Buff 时</span>，然后勾上 <span class="inline-code">Buff 在时循环播放，Buff 消失自动停止</span>。</p>
         <p>这样就是 Buff 在的时候循环播，Buff 没了就停，不用你自己手动断开。</p>
         <div class="note">
           这个功能适合持续型语音、增益提醒、变身提示，也适合你说的“持续时间内播放，消失就断开”。
@@ -279,12 +280,12 @@
 
       <article class="card">
         <h3>4. 想分享给别人</h3>
-        <p>到 <span class="inline-code">分享包</span> 标签页，导出整个方案、某个分组，或者单条规则。</p>
-        <p>导出来会得到 <span class="inline-code">.sfxpack</span>，别人导入后，规则和音效会一起处理。</p>
+        <p>到 <span class="inline-code">我的音效</span> 标签页，打开 <span class="inline-code">投稿中心</span>。</p>
+        <p>选择整个方案、某个分组，或者单条规则，插件会生成 <span class="inline-code">.sfxpack</span> 和 <span class="inline-code">投稿信息.txt</span>。</p>
         <div class="figure">
           <img src="images/share-pack.svg" alt="分享包流程图">
         </div>
-        <span class="badge">分享的时候不用再自己找音效文件</span>
+        <span class="badge">投稿文件发给作者审核后进入社区</span>
       </article>
 
       <article class="card">
@@ -299,7 +300,7 @@
 
       <article class="card">
         <h3>6. 想投稿到社区</h3>
-        <p>打开 <span class="inline-code">社区</span> 标签页里的 <span class="inline-code">投稿音效包</span>，选择整个方案、某个分组或单条规则。</p>
+        <p>打开 <span class="inline-code">我的音效</span> 标签页里的 <span class="inline-code">投稿中心</span>，选择整个方案、某个分组或单条规则。</p>
         <p>只需要填写包名、作者、版本，封面可以不填。作者是必填项，方便审核和展示。插件会自动生成 <span class="inline-code">.sfxpack</span> 和 <span class="inline-code">投稿信息.txt</span>。</p>
         <div class="note">
           生成后把这两个文件发送到邮箱 <span class="inline-code">1104449674@qq.com</span>，或 QQ 群 <span class="inline-code">659827727</span>。审核通过后才会出现在社区列表里。

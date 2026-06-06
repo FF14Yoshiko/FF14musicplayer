@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private float newSoundVolume = 1f;
     private int newSoundPriority;
     private string soundLibraryMessage = string.Empty;
+    private string requestedTab = string.Empty;
 
     public MainWindow(
         EventLogService eventLogService,
@@ -79,6 +80,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("查看插件教程"))
             OpenTutorial();
+        DrawAdvancedModeToggle();
         if (!string.IsNullOrWhiteSpace(windowMessage))
             ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), windowMessage);
         ImGui.Separator();
@@ -86,39 +88,39 @@ public sealed partial class MainWindow : Window, IDisposable
         if (!ImGui.BeginTabBar("##AllTimeSoundTriggerTabs"))
             return;
 
-        if (ImGui.BeginTabItem("规则"))
+        if (BeginRequestedTab("首页", "home"))
         {
-            DrawRulesTab();
+            DrawHomeTab();
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("音效库"))
-        {
-            DrawSoundLibraryTab();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem("方案"))
-        {
-            DrawProfilesTab();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem("分享包"))
-        {
-            DrawPackageTab();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem("社区"))
+        if (BeginRequestedTab("社区音效包", "community"))
         {
             DrawCommunityTab();
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("日志"))
+        if (BeginRequestedTab("我的音效", "mine"))
+        {
+            DrawMySoundsTab();
+            ImGui.EndTabItem();
+        }
+
+        if (BeginRequestedTab("音效库", "library"))
+        {
+            DrawSoundLibraryTab();
+            ImGui.EndTabItem();
+        }
+
+        if (BeginRequestedTab("日志", "log"))
         {
             DrawEventLogTab();
+            ImGui.EndTabItem();
+        }
+
+        if (configuration.CommunityDeveloperMode && BeginRequestedTab("高级", "advanced"))
+        {
+            DrawAdvancedTab();
             ImGui.EndTabItem();
         }
 
@@ -195,6 +197,55 @@ public sealed partial class MainWindow : Window, IDisposable
         DrawRulesEditorTab();
     }
 
+    private bool BeginRequestedTab(string label, string tabKey)
+    {
+        var flags = requestedTab.Equals(tabKey, StringComparison.OrdinalIgnoreCase)
+            ? ImGuiTabItemFlags.SetSelected
+            : ImGuiTabItemFlags.None;
+        var open = ImGui.BeginTabItem(label, flags);
+        if (open && requestedTab.Equals(tabKey, StringComparison.OrdinalIgnoreCase))
+            requestedTab = string.Empty;
+        return open;
+    }
+
+    private void RequestTab(string tabKey)
+    {
+        requestedTab = tabKey;
+    }
+
+    private void DrawAdvancedModeToggle()
+    {
+        var io = ImGui.GetIO();
+        if (!io.KeyCtrl || !io.KeyShift)
+            return;
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton(configuration.CommunityDeveloperMode ? "关闭高级模式" : "高级模式"))
+        {
+            configuration.CommunityDeveloperMode = !configuration.CommunityDeveloperMode;
+            configuration.Save();
+            if (!configuration.CommunityDeveloperMode && requestedTab.Equals("advanced", StringComparison.OrdinalIgnoreCase))
+                requestedTab = "home";
+        }
+    }
+
+    private void DrawAdvancedTab()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.72f, 0.35f, 1f), "高级模式：这里保留完整规则编辑、方案管理、分享包导入导出和审核发布。");
+
+        if (ImGui.CollapsingHeader("完整规则编辑", ImGuiTreeNodeFlags.DefaultOpen))
+            DrawRulesEditorTab();
+
+        if (ImGui.CollapsingHeader("方案管理"))
+            DrawProfilesTab();
+
+        if (ImGui.CollapsingHeader("分享包导入导出"))
+            DrawPackageTab();
+
+        DrawCommunityDeveloperPanel();
+    }
+
     private void DrawSoundLibraryTab()
     {
         ImGui.Spacing();
@@ -228,23 +279,26 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), $"自动复制到：{sfxPackService.ManagedSoundDirectory}");
 
-        ImGui.Separator();
-        if (ImGui.CollapsingHeader("高级：手动添加路径"))
+        if (configuration.CommunityDeveloperMode)
         {
-            DrawInputText("SoundId##NewSoundId", newSoundId, 120, value => newSoundId = value);
-            DrawInputText("名称##NewSoundName", newSoundName, 120, value => newSoundName = value);
-            DrawInputText("文件路径##NewSoundPath", newSoundPath, 520, value => newSoundPath = value);
+            ImGui.Separator();
+            if (ImGui.CollapsingHeader("高级：手动添加路径"))
+            {
+                DrawInputText("SoundId##NewSoundId", newSoundId, 120, value => newSoundId = value);
+                DrawInputText("名称##NewSoundName", newSoundName, 120, value => newSoundName = value);
+                DrawInputText("文件路径##NewSoundPath", newSoundPath, 520, value => newSoundPath = value);
 
-            ImGui.SetNextItemWidth(220f);
-            ImGui.SliderFloat("音量##NewSoundVolume", ref newSoundVolume, 0f, 1f);
-            newSoundVolume = Math.Clamp(newSoundVolume, 0f, 1f);
+                ImGui.SetNextItemWidth(220f);
+                ImGui.SliderFloat("音量##NewSoundVolume", ref newSoundVolume, 0f, 1f);
+                newSoundVolume = Math.Clamp(newSoundVolume, 0f, 1f);
 
-            ImGui.SetNextItemWidth(120f);
-            if (ImGui.InputInt("优先级##NewSoundPriority", ref newSoundPriority))
-                newSoundPriority = Math.Clamp(newSoundPriority, -100, 100);
+                ImGui.SetNextItemWidth(120f);
+                if (ImGui.InputInt("优先级##NewSoundPriority", ref newSoundPriority))
+                    newSoundPriority = Math.Clamp(newSoundPriority, -100, 100);
 
-            if (ImGui.Button("添加音效"))
-                AddSoundLibraryEntry();
+                if (ImGui.Button("添加音效"))
+                    AddSoundLibraryEntry();
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(soundLibraryMessage))
