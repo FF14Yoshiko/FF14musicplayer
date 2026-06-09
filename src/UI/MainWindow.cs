@@ -5,10 +5,12 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 using AllTimeSoundTrigger.Audio;
 using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.ConfigurationModels;
+using AllTimeSoundTrigger.Rules;
 using AllTimeSoundTrigger.Services;
 using AllTimeSoundTrigger.Utilities;
 using Dalamud.Bindings.ImGui;
@@ -28,6 +30,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly ITextureProvider textureProvider;
     private readonly Configuration configuration;
     private readonly Action reloadRules;
+    private readonly Func<RulesEngineRuntimeSnapshot> getRulesEngineRuntimeSnapshot;
     private readonly string pluginDirectory;
     private string windowMessage = string.Empty;
     private string newProfileName = string.Empty;
@@ -50,6 +53,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ITextureProvider textureProvider,
         Configuration configuration,
         Action reloadRules,
+        Func<RulesEngineRuntimeSnapshot> getRulesEngineRuntimeSnapshot,
         string pluginDirectory)
         : base($"{Plugin.DisplayName}##AllTimeSoundTriggerMainWindow")
     {
@@ -62,6 +66,7 @@ public sealed partial class MainWindow : Window, IDisposable
         this.textureProvider = textureProvider;
         this.configuration = configuration;
         this.reloadRules = reloadRules;
+        this.getRulesEngineRuntimeSnapshot = getRulesEngineRuntimeSnapshot;
         this.pluginDirectory = pluginDirectory;
         SizeConstraints = new WindowSizeConstraints
         {
@@ -76,6 +81,8 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "本地音效规则引擎");
         ImGui.SameLine();
+        DrawExperienceModeSelector();
+        ImGui.SameLine();
         if (ImGui.Button("查看插件教程"))
             OpenTutorial();
         DrawAdvancedModeToggle();
@@ -86,37 +93,40 @@ public sealed partial class MainWindow : Window, IDisposable
         if (!ImGui.BeginTabBar("##AllTimeSoundTriggerTabs"))
             return;
 
+        if (!IsTabVisible(requestedTab))
+            requestedTab = "home";
+
         if (BeginRequestedTab("首页", "home"))
         {
             DrawHomeTab();
             ImGui.EndTabItem();
         }
 
-        if (BeginRequestedTab("社区音效包", "community"))
+        if (IsTabVisible("community") && BeginRequestedTab(GetCommunityTabLabel(), "community"))
         {
             DrawCommunityTab();
             ImGui.EndTabItem();
         }
 
-        if (BeginRequestedTab("我的音效", "mine"))
+        if (IsTabVisible("mine") && BeginRequestedTab(GetMySoundsTabLabel(), "mine"))
         {
             DrawMySoundsTab();
             ImGui.EndTabItem();
         }
 
-        if (BeginRequestedTab("音效库", "library"))
+        if (IsTabVisible("library") && BeginRequestedTab("音效库", "library"))
         {
             DrawSoundLibraryTab();
             ImGui.EndTabItem();
         }
 
-        if (BeginRequestedTab("日志", "log"))
+        if (IsTabVisible("log") && BeginRequestedTab("日志", "log"))
         {
             DrawEventLogTab();
             ImGui.EndTabItem();
         }
 
-        if (configuration.CommunityDeveloperMode && BeginRequestedTab("高级", "advanced"))
+        if (IsTabVisible("advanced") && BeginRequestedTab("高级", "advanced"))
         {
             DrawAdvancedTab();
             ImGui.EndTabItem();
@@ -127,6 +137,16 @@ public sealed partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+        CancelCommunityOperations("已取消社区后台任务。");
+        lock (communityCancellationGate)
+        {
+            communityCancellation.Dispose();
+        }
+    }
+
+    public override void OnClose()
+    {
+        CancelCommunityOperations("已取消社区后台任务。");
     }
 
     private void OpenTutorial()
@@ -208,8 +228,114 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void RequestTab(string tabKey)
     {
-        requestedTab = tabKey;
+        requestedTab = IsTabVisible(tabKey) ? tabKey : "home";
     }
+
+    private void DrawExperienceModeSelector()
+    {
+        ImGui.SetNextItemWidth(132f);
+        if (!ImGui.BeginCombo("模式##ExperienceMode", GetExperienceModeLabel(configuration.ExperienceMode)))
+            return;
+
+        DrawExperienceModeOption(ExperienceMode.Beginner);
+        DrawExperienceModeOption(ExperienceMode.Player);
+        DrawExperienceModeOption(ExperienceMode.Creator);
+        DrawExperienceModeOption(ExperienceMode.Advanced);
+        if (configuration.CommunityDeveloperMode)
+            DrawExperienceModeOption(ExperienceMode.Reviewer);
+
+        ImGui.EndCombo();
+    }
+
+    private void DrawExperienceModeOption(ExperienceMode mode)
+    {
+        var selected = configuration.ExperienceMode == mode;
+        if (ImGui.Selectable($"{GetExperienceModeLabel(mode)}##ExperienceMode{mode}", selected))
+            SetExperienceMode(mode);
+
+        if (selected)
+            ImGui.SetItemDefaultFocus();
+    }
+
+    private void SetExperienceMode(ExperienceMode mode)
+    {
+        configuration.ExperienceMode = mode;
+        configuration.ExperienceModeChosen = true;
+        if (mode == ExperienceMode.Reviewer)
+            configuration.CommunityDeveloperMode = true;
+        configuration.Save();
+        if (!IsTabVisible(requestedTab))
+            requestedTab = "home";
+        windowMessage = $"已切换到{GetExperienceModeLabel(mode)}。";
+    }
+
+    private bool IsTabVisible(string tabKey)
+    {
+        if (string.IsNullOrWhiteSpace(tabKey) || tabKey.Equals("home", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var mode = configuration.ExperienceMode;
+        if (tabKey.Equals("community", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (tabKey.Equals("mine", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (tabKey.Equals("library", StringComparison.OrdinalIgnoreCase))
+            return CanCreateSounds();
+        if (tabKey.Equals("log", StringComparison.OrdinalIgnoreCase))
+            return mode != ExperienceMode.Beginner;
+        if (tabKey.Equals("advanced", StringComparison.OrdinalIgnoreCase))
+            return CanUseAdvancedTools();
+
+        return false;
+    }
+
+    private bool CanCreateSounds()
+        => configuration.ExperienceMode is ExperienceMode.Creator or ExperienceMode.Advanced or ExperienceMode.Reviewer;
+
+    private bool CanEditRules()
+        => configuration.ExperienceMode is ExperienceMode.Creator or ExperienceMode.Advanced or ExperienceMode.Reviewer;
+
+    private bool CanUseAdvancedTools()
+        => configuration.ExperienceMode is ExperienceMode.Advanced or ExperienceMode.Reviewer;
+
+    private bool CanReviewCommunity()
+        => configuration.CommunityDeveloperMode
+            && configuration.ExperienceMode == ExperienceMode.Reviewer;
+
+    private string GetCommunityTabLabel()
+        => configuration.ExperienceMode is ExperienceMode.Beginner or ExperienceMode.Player
+            ? "逛音效包"
+            : "社区音效包";
+
+    private string GetMySoundsTabLabel()
+        => configuration.ExperienceMode switch
+        {
+            ExperienceMode.Beginner or ExperienceMode.Player => "我的音效包",
+            ExperienceMode.Creator => "做音效",
+            _ => "我的音效"
+        };
+
+    private static string GetExperienceModeLabel(ExperienceMode mode)
+        => mode switch
+        {
+            ExperienceMode.Beginner => "小白模式",
+            ExperienceMode.Player => "玩音效包",
+            ExperienceMode.Creator => "创作者",
+            ExperienceMode.Advanced => "高级模式",
+            ExperienceMode.Reviewer => "审核模式",
+            _ => "小白模式"
+        };
+
+    private static string GetExperienceModeHint(ExperienceMode mode)
+        => mode switch
+        {
+            ExperienceMode.Beginner => "只保留安装、开关、试听和帮助。",
+            ExperienceMode.Player => "适合逛社区包、管理已安装音效包。",
+            ExperienceMode.Creator => "适合导入音频、用向导做音效、生成投稿包。",
+            ExperienceMode.Advanced => "显示完整规则编辑、导入导出和排错工具。",
+            ExperienceMode.Reviewer => "显示社区审核和 Gitee 发布工具。",
+            _ => string.Empty
+        };
 
     private void DrawAdvancedModeToggle()
     {
@@ -218,11 +344,15 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
 
         ImGui.SameLine();
-        if (ImGui.SmallButton(configuration.CommunityDeveloperMode ? "关闭高级模式" : "高级模式"))
+        if (ImGui.SmallButton(configuration.CommunityDeveloperMode ? "关闭审核模式" : "审核模式"))
         {
             configuration.CommunityDeveloperMode = !configuration.CommunityDeveloperMode;
+            configuration.ExperienceMode = configuration.CommunityDeveloperMode
+                ? ExperienceMode.Reviewer
+                : ExperienceMode.Advanced;
+            configuration.ExperienceModeChosen = true;
             configuration.Save();
-            if (!configuration.CommunityDeveloperMode && requestedTab.Equals("advanced", StringComparison.OrdinalIgnoreCase))
+            if (!IsTabVisible(requestedTab))
                 requestedTab = "home";
         }
     }
@@ -232,13 +362,56 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.Spacing();
         ImGui.TextColored(new Vector4(1f, 0.72f, 0.35f, 1f), "高级模式：这里保留完整规则编辑、分享包导入导出和审核发布。");
 
+        DrawRuntimeObservationPanel();
+
         if (ImGui.CollapsingHeader("完整规则编辑", ImGuiTreeNodeFlags.DefaultOpen))
             DrawRulesEditorTab();
 
         if (ImGui.CollapsingHeader("分享包导入导出"))
             DrawPackageTab();
 
-        DrawCommunityDeveloperPanel();
+        if (CanReviewCommunity())
+            DrawCommunityDeveloperPanel();
+    }
+
+    private void DrawRuntimeObservationPanel()
+    {
+        if (!ImGui.CollapsingHeader("运行时观测", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        var snapshot = getRulesEngineRuntimeSnapshot();
+        ImGui.TextColored(
+            new Vector4(0.70f, 0.72f, 0.76f, 1f),
+            "用于排查卡顿、没触发、冷却跳过等问题。这里显示最近一次游戏事件的规则匹配情况。");
+
+        if (!ImGui.BeginTable("##RuntimeObservationTable", 2, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            return;
+
+        ImGui.TableSetupColumn("指标", ImGuiTableColumnFlags.WidthFixed, 180f);
+        ImGui.TableSetupColumn("当前值", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableHeadersRow();
+
+        DrawRuntimeObservationRow("当前规则数", snapshot.RuleCount.ToString());
+        DrawRuntimeObservationRow("事件索引桶数量", snapshot.EventIndexBucketCount.ToString());
+        DrawRuntimeObservationRow("全局规则数", snapshot.GlobalRuleCount.ToString());
+        DrawRuntimeObservationRow("最近事件类型", string.IsNullOrWhiteSpace(snapshot.LastEventType) ? "暂无事件" : snapshot.LastEventType);
+        DrawRuntimeObservationRow("最近事件时间", snapshot.LastEventAt?.ToString("HH:mm:ss") ?? "暂无事件");
+        DrawRuntimeObservationRow("最近事件耗时", $"{snapshot.LastEventElapsedMilliseconds:0.###} ms");
+        DrawRuntimeObservationRow("候选规则数", snapshot.LastCandidateRuleCount.ToString());
+        DrawRuntimeObservationRow("触发器命中数", snapshot.LastMatchedRuleCount.ToString());
+        DrawRuntimeObservationRow("触发规则数", snapshot.LastTriggeredRuleCount.ToString());
+        DrawRuntimeObservationRow("被冷却跳过数", snapshot.LastCooldownSkippedCount.ToString());
+
+        ImGui.EndTable();
+    }
+
+    private static void DrawRuntimeObservationRow(string label, string value)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), label);
+        ImGui.TableNextColumn();
+        ImGui.Text(value);
     }
 
     private void DrawSoundLibraryTab()

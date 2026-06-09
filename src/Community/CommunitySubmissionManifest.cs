@@ -22,6 +22,20 @@ public sealed class CommunitySubmissionManifest
 
     public List<string> Tags { get; set; } = [];
 
+    public string Category { get; set; } = string.Empty;
+
+    public List<string> GameModes { get; set; } = [];
+
+    public List<string> Jobs { get; set; } = [];
+
+    public List<string> TriggerTypes { get; set; } = [];
+
+    public string CompatiblePluginVersion { get; set; } = string.Empty;
+
+    public string License { get; set; } = string.Empty;
+
+    public string ContentWarning { get; set; } = string.Empty;
+
     public string Readme { get; set; } = string.Empty;
 
     public string CoverEntryName { get; set; } = string.Empty;
@@ -37,13 +51,16 @@ public sealed class CommunitySubmissionManifest
         Author = NormalizeText(Author);
         Description = NormalizeText(Description);
         PackageVersion = NormalizeText(PackageVersion);
+        Category = NormalizeText(Category);
+        CompatiblePluginVersion = NormalizeText(CompatiblePluginVersion);
+        License = NormalizeText(License);
+        ContentWarning = NormalizeText(ContentWarning);
         Readme = NormalizeText(Readme);
         CoverEntryName = NormalizeZipPath(CoverEntryName);
-        Tags = (Tags ?? [])
-            .Select(NormalizeText)
-            .Where(item => item.Length > 0)
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        Tags = NormalizeList(Tags);
+        GameModes = NormalizeList(GameModes);
+        Jobs = NormalizeList(Jobs);
+        TriggerTypes = NormalizeList(TriggerTypes);
 
         Id = NormalizeId(Id);
         if (Id.Length == 0)
@@ -54,6 +71,8 @@ public sealed class CommunitySubmissionManifest
             Author = "未署名玩家";
         if (PackageVersion.Length == 0)
             PackageVersion = "1.0.0";
+        if (Category.Length == 0)
+            Category = "玩家投稿";
     }
 
     public static string GenerateId(string value)
@@ -94,6 +113,13 @@ public sealed class CommunitySubmissionManifest
 
     private static string NormalizeText(string? value)
         => (value ?? string.Empty).Trim();
+
+    private static List<string> NormalizeList(IEnumerable<string>? values)
+        => (values ?? [])
+            .Select(NormalizeText)
+            .Where(item => item.Length > 0)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
 
     private static string NormalizeZipPath(string? path)
     {

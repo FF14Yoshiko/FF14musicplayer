@@ -33,7 +33,7 @@ public sealed class CommunityPackService : IDisposable
         Timeout = TimeSpan.FromSeconds(45)
     };
     private readonly object gate = new();
-    private readonly Dictionary<string, string> installedVersions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CommunityInstalledPack> installedPacks = new(StringComparer.OrdinalIgnoreCase);
     private List<CommunityPackInfo> packs = [];
     private bool disposed;
 
@@ -49,6 +49,7 @@ public sealed class CommunityPackService : IDisposable
         Directory.CreateDirectory(CacheDirectory);
         Directory.CreateDirectory(CoverDirectory);
         Directory.CreateDirectory(DownloadDirectory);
+        CleanupTemporaryFiles();
         LoadInstalled();
         TryLoadCachedIndex();
     }
@@ -69,6 +70,15 @@ public sealed class CommunityPackService : IDisposable
         {
             lock (gate)
                 return packs.ToArray();
+        }
+    }
+
+    public IReadOnlyList<CommunityInstalledPack> InstalledPacks
+    {
+        get
+        {
+            lock (gate)
+                return installedPacks.Values.Select(CloneInstalledPack).ToArray();
         }
     }
 
@@ -120,7 +130,14 @@ public sealed class CommunityPackService : IDisposable
                 extension = candidate;
         }
 
-        return Path.Combine(CoverDirectory, $"{MakeSafeFileName(pack.Id)}{extension}");
+        var hashSuffix = (pack.CoverSha256 ?? string.Empty).Trim();
+        if (hashSuffix.Length > 12)
+            hashSuffix = hashSuffix[..12];
+
+        var fileName = hashSuffix.Length == 0
+            ? MakeSafeFileName(pack.Id)
+            : $"{MakeSafeFileName(pack.Id)}_{MakeSafeFileName(hashSuffix)}";
+        return Path.Combine(CoverDirectory, $"{fileName}{extension}");
     }
 
     public async Task<string> EnsureCoverCachedAsync(CommunityPackInfo pack, CancellationToken cancellationToken = default)
@@ -131,10 +148,21 @@ public sealed class CommunityPackService : IDisposable
 
         var path = GetCoverCachePath(pack);
         if (File.Exists(path))
-            return path;
+        {
+            if (await VerifyCoverHashAsync(path, pack, cancellationToken).ConfigureAwait(false))
+                return path;
+
+            File.Delete(path);
+        }
 
         Directory.CreateDirectory(CoverDirectory);
         await DownloadFileAsync(pack.CoverUrl, path, MaxCoverBytes, cancellationToken).ConfigureAwait(false);
+        if (!await VerifyCoverHashAsync(path, pack, cancellationToken).ConfigureAwait(false))
+        {
+            File.Delete(path);
+            throw new InvalidOperationException("封面校验失败，已删除下载文件。");
+        }
+
         return path;
     }
 
@@ -143,6 +171,8 @@ public sealed class CommunityPackService : IDisposable
         ThrowIfDisposed();
         if (string.IsNullOrWhiteSpace(pack.PackageUrl))
             throw new InvalidOperationException("这个音效包缺少下载地址。");
+        if (string.IsNullOrWhiteSpace(pack.Sha256))
+            throw new InvalidOperationException("这个社区音效包缺少 Sha256 校验值，已拒绝下载。");
         if (pack.SizeBytes > MaxPackageBytes)
             throw new InvalidOperationException("这个音效包超过 100MB，已拒绝下载。");
 
@@ -174,15 +204,58 @@ public sealed class CommunityPackService : IDisposable
     {
         lock (gate)
         {
-            return installedVersions.TryGetValue(pack.Id, out var version)
-                && version.Equals(pack.Version, StringComparison.OrdinalIgnoreCase);
+            return installedPacks.TryGetValue(pack.Id, out var installed)
+                && installed.Version.Equals(pack.Version, StringComparison.OrdinalIgnoreCase);
         }
     }
 
-    public void MarkInstalled(CommunityPackInfo pack)
+    public CommunityInstalledPack? GetInstalledPack(CommunityPackInfo pack)
+        => GetInstalledPack(pack.Id);
+
+    public CommunityInstalledPack? GetInstalledPack(string packId)
     {
+        var id = (packId ?? string.Empty).Trim();
+        if (id.Length == 0)
+            return null;
+
         lock (gate)
-            installedVersions[pack.Id] = pack.Version;
+            return installedPacks.TryGetValue(id, out var installed)
+                ? CloneInstalledPack(installed)
+                : null;
+    }
+
+    public void MarkInstalled(
+        CommunityPackInfo pack,
+        IReadOnlyCollection<string> groupIds,
+        IReadOnlyCollection<string> soundIds,
+        IReadOnlyCollection<string> importDirectories)
+    {
+        var installed = new CommunityInstalledPack
+        {
+            Id = pack.Id,
+            Version = pack.Version,
+            Name = pack.Name,
+            GroupIds = groupIds.ToList(),
+            SoundIds = soundIds.ToList(),
+            ImportDirectories = importDirectories.ToList(),
+            InstalledAt = DateTimeOffset.Now
+        };
+        installed.Normalize();
+
+        lock (gate)
+            installedPacks[installed.Id] = installed;
+
+        SaveInstalled();
+    }
+
+    public void UnmarkInstalled(string packId)
+    {
+        var id = (packId ?? string.Empty).Trim();
+        if (id.Length == 0)
+            return;
+
+        lock (gate)
+            installedPacks.Remove(id);
 
         SaveInstalled();
     }
@@ -193,6 +266,7 @@ public sealed class CommunityPackService : IDisposable
             return;
 
         disposed = true;
+        CleanupTemporaryFiles();
         httpClient.Dispose();
     }
 
@@ -207,38 +281,65 @@ public sealed class CommunityPackService : IDisposable
             throw new InvalidOperationException($"文件超过限制：{FormatBytes(contentLength.Value)}。");
 
         var tempPath = $"{destinationPath}.tmp";
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = File.Create(tempPath))
+        try
         {
-            var buffer = new byte[81920];
-            long total = 0;
-            while (true)
+            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (var output = File.Create(tempPath))
             {
-                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                    break;
+                var buffer = new byte[81920];
+                long total = 0;
+                while (true)
+                {
+                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                        break;
 
-                total += read;
-                if (total > maxBytes)
-                    throw new InvalidOperationException($"文件超过限制：{FormatBytes(maxBytes)}。");
+                    total += read;
+                    if (total > maxBytes)
+                        throw new InvalidOperationException($"文件超过限制：{FormatBytes(maxBytes)}。");
 
-                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
             }
-        }
 
-        File.Move(tempPath, destinationPath, true);
+            File.Move(tempPath, destinationPath, true);
+        }
+        catch
+        {
+            TryDeleteFile(tempPath);
+            throw;
+        }
     }
 
     private static async Task<bool> VerifyPackageHashAsync(string path, CommunityPackInfo pack, CancellationToken cancellationToken)
     {
         var expected = (pack.Sha256 ?? string.Empty).Trim();
         if (expected.Length == 0)
+            throw new InvalidOperationException("这个社区音效包缺少 Sha256 校验值。");
+        if (!IsSha256Text(expected))
+            throw new InvalidOperationException("这个社区音效包的 Sha256 格式不正确。");
+
+        return await VerifySha256Async(path, expected, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> VerifyCoverHashAsync(string path, CommunityPackInfo pack, CancellationToken cancellationToken)
+        => await VerifySha256Async(path, pack.CoverSha256, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<bool> VerifySha256Async(string path, string expectedSha256, CancellationToken cancellationToken)
+    {
+        var expected = (expectedSha256 ?? string.Empty).Trim();
+        if (expected.Length == 0)
             return true;
+        if (!IsSha256Text(expected))
+            return false;
 
         await using var stream = File.OpenRead(path);
         var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
         return hash.Equals(expected, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsSha256Text(string value)
+        => value.Length == 64 && value.All(Uri.IsHexDigit);
 
     private void LoadInstalled()
     {
@@ -247,19 +348,37 @@ public sealed class CommunityPackService : IDisposable
 
         try
         {
-            var values = JsonSerializer.Deserialize<Dictionary<string, string>>(
-                File.ReadAllText(InstalledCachePath),
-                SerializerOptions);
+            var json = File.ReadAllText(InstalledCachePath);
+            using var document = JsonDocument.Parse(json);
+            installedPacks.Clear();
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty(nameof(CommunityInstalledPackStore.Packs), out _))
+            {
+                var store = JsonSerializer.Deserialize<CommunityInstalledPackStore>(json, SerializerOptions)
+                    ?? new CommunityInstalledPackStore();
+                store.Normalize();
+                foreach (var pack in store.Packs)
+                    installedPacks[pack.Id] = pack;
+                return;
+            }
+
+            var values = JsonSerializer.Deserialize<Dictionary<string, string>>(json, SerializerOptions);
             if (values == null)
                 return;
-
-            installedVersions.Clear();
             foreach (var item in values)
             {
                 var id = (item.Key ?? string.Empty).Trim();
                 var version = (item.Value ?? string.Empty).Trim();
                 if (id.Length > 0)
-                    installedVersions[id] = version;
+                {
+                    installedPacks[id] = new CommunityInstalledPack
+                    {
+                        Id = id,
+                        Name = id,
+                        Version = version
+                    };
+                }
             }
         }
         catch (Exception ex)
@@ -271,17 +390,75 @@ public sealed class CommunityPackService : IDisposable
     private void SaveInstalled()
     {
         Directory.CreateDirectory(CacheDirectory);
-        Dictionary<string, string> snapshot;
+        CommunityInstalledPackStore snapshot;
         lock (gate)
-            snapshot = new Dictionary<string, string>(installedVersions, StringComparer.OrdinalIgnoreCase);
+        {
+            snapshot = new CommunityInstalledPackStore
+            {
+                Packs = installedPacks.Values.Select(CloneInstalledPack).ToList()
+            };
+        }
+
+        snapshot.Normalize();
 
         File.WriteAllText(InstalledCachePath, JsonSerializer.Serialize(snapshot, SerializerOptions));
+    }
+
+    private static CommunityInstalledPack CloneInstalledPack(CommunityInstalledPack source)
+    {
+        var clone = new CommunityInstalledPack
+        {
+            Id = source.Id,
+            Version = source.Version,
+            Name = source.Name,
+            GroupIds = source.GroupIds.ToList(),
+            SoundIds = source.SoundIds.ToList(),
+            ImportDirectories = source.ImportDirectories.ToList(),
+            InstalledAt = source.InstalledAt
+        };
+        clone.Normalize();
+        return clone;
     }
 
     private void ThrowIfDisposed()
     {
         if (disposed)
             throw new ObjectDisposedException(nameof(CommunityPackService));
+    }
+
+    private void CleanupTemporaryFiles()
+    {
+        TryDeleteTemporaryFiles(CoverDirectory);
+        TryDeleteTemporaryFiles(DownloadDirectory);
+    }
+
+    private static void TryDeleteTemporaryFiles(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory))
+                return;
+
+            foreach (var path in Directory.EnumerateFiles(directory, "*.tmp", SearchOption.TopDirectoryOnly))
+                TryDeleteFile(path);
+        }
+        catch
+        {
+            // Best-effort cleanup only.
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            // Best-effort cleanup only.
+        }
     }
 
     private static string MakeSafeFileName(string value)

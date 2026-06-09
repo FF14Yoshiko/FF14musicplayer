@@ -11,7 +11,7 @@ namespace AllTimeSoundTrigger;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    private const int CurrentVersion = 11;
+    private const int CurrentVersion = 12;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -28,6 +28,10 @@ public sealed class Configuration : IPluginConfiguration
     public bool BuiltInExampleRulesInstalled { get; set; }
 
     public bool CommunityDeveloperMode { get; set; }
+
+    public ExperienceMode ExperienceMode { get; set; } = ExperienceMode.Beginner;
+
+    public bool ExperienceModeChosen { get; set; }
 
     public string CommunityRepositoryPath { get; set; } = @"D:\MyFF14\ffxiv-sfx-community";
 
@@ -69,6 +73,25 @@ public sealed class Configuration : IPluginConfiguration
         AutoSwitch ??= new AutoSwitchConfiguration();
         AutoSwitch.Normalize();
         Rules ??= [];
+        if (!Enum.IsDefined(typeof(ExperienceMode), ExperienceMode))
+        {
+            ExperienceMode = ExperienceMode.Beginner;
+            changed = true;
+        }
+
+        if (CommunityDeveloperMode && !ExperienceModeChosen)
+        {
+            ExperienceMode = ExperienceMode.Reviewer;
+            ExperienceModeChosen = true;
+            changed = true;
+        }
+
+        if (ExperienceMode == ExperienceMode.Reviewer && !CommunityDeveloperMode)
+        {
+            CommunityDeveloperMode = true;
+            changed = true;
+        }
+
         CommunityRepositoryPath = (CommunityRepositoryPath ?? string.Empty).Trim();
         CommunitySubmissionAuthor = (CommunitySubmissionAuthor ?? string.Empty).Trim();
         if (CommunityRepositoryPath.Length == 0)

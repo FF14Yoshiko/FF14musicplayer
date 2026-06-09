@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.ConfigurationModels;
+using AllTimeSoundTrigger.Services;
 using Dalamud.Bindings.ImGui;
 
 namespace AllTimeSoundTrigger.UI;
@@ -25,6 +26,7 @@ public sealed partial class MainWindow
     private string submissionCoverPath = string.Empty;
     private string submissionOutputPath = string.Empty;
     private string submissionMessage = string.Empty;
+    private SfxPackSubmissionPreflightResult? submissionPreflight;
 
     private string reviewPackagePath = string.Empty;
     private string reviewRepoPath = string.Empty;
@@ -34,9 +36,20 @@ public sealed partial class MainWindow
     private string reviewAuthor = string.Empty;
     private string reviewVersion = "1.0.0";
     private string reviewTagsText = string.Empty;
+    private string reviewCategory = string.Empty;
+    private string reviewGameModesText = string.Empty;
+    private string reviewJobsText = string.Empty;
+    private string reviewTriggerTypesText = string.Empty;
+    private string reviewCompatiblePluginVersion = string.Empty;
+    private string reviewLicense = string.Empty;
+    private string reviewContentWarning = string.Empty;
+    private string reviewChangelog = string.Empty;
+    private string reviewChangelogUrl = string.Empty;
     private string reviewDescription = string.Empty;
     private string reviewReadme = string.Empty;
     private string reviewMessage = string.Empty;
+    private bool reviewDeprecated;
+    private bool reviewHidden;
     private bool reviewAllowOverwrite;
     private bool reviewPushToRemote = true;
     private CommunitySubmissionValidation? reviewValidation;
@@ -62,7 +75,11 @@ public sealed partial class MainWindow
         DrawInputText("作者##SubmissionAuthor", submissionAuthor, 80, value => submissionAuthor = value, 220f);
         DrawInputText("版本##SubmissionVersion", submissionVersion, 32, value => submissionVersion = string.IsNullOrWhiteSpace(value) ? "1.0.0" : value, 120f);
 
-        DrawInputText("封面图，可空置##SubmissionCoverPath", submissionCoverPath, 520, value => submissionCoverPath = value);
+        DrawInputText("封面图，可空置##SubmissionCoverPath", submissionCoverPath, 520, value =>
+        {
+            submissionCoverPath = value;
+            submissionPreflight = null;
+        });
         ImGui.SameLine();
         if (ImGui.Button("选择封面##PickSubmissionCover"))
             OpenSubmissionCoverDialog();
@@ -72,12 +89,18 @@ public sealed partial class MainWindow
         if (ImGui.Button("选择位置##PickSubmissionOutput"))
             OpenSubmissionOutputDialog();
 
+        if (ImGui.Button("投稿前自检"))
+            RunSubmissionPreflight();
+
+        ImGui.SameLine();
         if (ImGui.Button("生成投稿文件"))
             ExportCommunitySubmission();
 
         ImGui.SameLine();
         if (ImGui.Button("打开投稿目录"))
             OpenSubmissionDirectory();
+
+        DrawSubmissionPreflightResult();
 
         if (!string.IsNullOrWhiteSpace(submissionMessage))
             ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), submissionMessage);
@@ -95,6 +118,7 @@ public sealed partial class MainWindow
                 {
                     submissionScopeIndex = i;
                     ResetSubmissionNameFromSelection();
+                    submissionPreflight = null;
                 }
 
                 if (selected)
@@ -130,6 +154,7 @@ public sealed partial class MainWindow
             {
                 submissionGroupId = group.Id;
                 ResetSubmissionNameFromSelection();
+                submissionPreflight = null;
             }
 
             if (selected)
@@ -163,6 +188,7 @@ public sealed partial class MainWindow
                 submissionRuleId = item.Rule.Id;
                 submissionGroupId = item.Group.Id;
                 ResetSubmissionNameFromSelection();
+                submissionPreflight = null;
             }
 
             if (selected)
@@ -171,6 +197,96 @@ public sealed partial class MainWindow
 
         ImGui.EndCombo();
     }
+
+    private void RunSubmissionPreflight()
+    {
+        try
+        {
+            var selection = BuildSubmissionSelection();
+            if (selection.Rules.Count == 0)
+            {
+                submissionMessage = "请先选择至少一条规则。";
+                submissionPreflight = null;
+                return;
+            }
+
+            var result = RunSubmissionPreflight(selection);
+            submissionMessage = FormatSubmissionPreflightSummary(result);
+        }
+        catch (Exception ex)
+        {
+            submissionPreflight = null;
+            submissionMessage = $"投稿前自检失败：{ex.Message}";
+        }
+    }
+
+    private SfxPackSubmissionPreflightResult RunSubmissionPreflight(SubmissionSelection selection)
+    {
+        var result = sfxPackService.ValidateSubmissionPreflight(
+            profileStorageService.ActiveProfile,
+            selection.GroupIds,
+            selection.RuleIds,
+            configuration.SoundLibrary,
+            submissionCoverPath);
+        submissionPreflight = result;
+        return result;
+    }
+
+    private void DrawSubmissionPreflightResult()
+    {
+        if (submissionPreflight == null)
+            return;
+
+        ImGui.Spacing();
+        ImGui.TextColored(GetSubmissionPreflightSummaryColor(submissionPreflight), FormatSubmissionPreflightSummary(submissionPreflight));
+        foreach (var issue in submissionPreflight.Issues.Take(8))
+        {
+            ImGui.TextColored(GetSubmissionPreflightIssueColor(issue.Severity), FormatSubmissionPreflightIssuePrefix(issue.Severity));
+            ImGui.SameLine();
+            ImGui.TextWrapped($"{issue.Title}：{issue.Message}");
+        }
+
+        if (submissionPreflight.Issues.Count > 8)
+        {
+            ImGui.TextColored(
+                new Vector4(0.70f, 0.72f, 0.76f, 1f),
+                $"还有 {submissionPreflight.Issues.Count - 8} 条自检结果未展开。");
+        }
+    }
+
+    private static string FormatSubmissionPreflightSummary(SfxPackSubmissionPreflightResult result)
+    {
+        var basis = $"规则 {result.RuleCount} / 音效 {result.SoundCount} / {FormatBytes(result.TotalSoundBytes)}";
+        if (result.ErrorCount > 0)
+            return $"自检未通过：{result.ErrorCount} 个阻断问题，{result.WarningCount} 个提醒。{basis}";
+        if (result.WarningCount > 0)
+            return $"自检通过，但有 {result.WarningCount} 个提醒。{basis}";
+
+        return $"自检通过。{basis}";
+    }
+
+    private static string FormatSubmissionPreflightIssuePrefix(SfxPackSubmissionPreflightSeverity severity)
+        => severity switch
+        {
+            SfxPackSubmissionPreflightSeverity.Error => "[阻断]",
+            SfxPackSubmissionPreflightSeverity.Warning => "[提醒]",
+            _ => "[信息]"
+        };
+
+    private static Vector4 GetSubmissionPreflightSummaryColor(SfxPackSubmissionPreflightResult result)
+        => result.ErrorCount > 0
+            ? new Vector4(1f, 0.45f, 0.35f, 1f)
+            : result.WarningCount > 0
+                ? new Vector4(1f, 0.78f, 0.30f, 1f)
+                : new Vector4(0.48f, 0.90f, 0.62f, 1f);
+
+    private static Vector4 GetSubmissionPreflightIssueColor(SfxPackSubmissionPreflightSeverity severity)
+        => severity switch
+        {
+            SfxPackSubmissionPreflightSeverity.Error => new Vector4(1f, 0.45f, 0.35f, 1f),
+            SfxPackSubmissionPreflightSeverity.Warning => new Vector4(1f, 0.78f, 0.30f, 1f),
+            _ => new Vector4(0.70f, 0.72f, 0.76f, 1f)
+        };
 
     private void ExportCommunitySubmission()
     {
@@ -192,6 +308,13 @@ public sealed partial class MainWindow
             var outputPath = string.IsNullOrWhiteSpace(submissionOutputPath)
                 ? sfxPackService.BuildDefaultSubmissionPath(manifest.Name)
                 : submissionOutputPath;
+
+            var preflight = RunSubmissionPreflight(selection);
+            if (preflight.HasErrors)
+            {
+                submissionMessage = FormatSubmissionPreflightSummary(preflight);
+                return;
+            }
 
             var result = sfxPackService.ExportSubmission(
                 profileStorageService.ActiveProfile,
@@ -237,7 +360,13 @@ public sealed partial class MainWindow
             Author = author,
             PackageVersion = string.IsNullOrWhiteSpace(submissionVersion) ? "1.0.0" : submissionVersion.Trim(),
             Description = BuildAutoSubmissionDescription(selection),
-            Tags = BuildAutoSubmissionTags(selection).ToList()
+            Tags = BuildAutoSubmissionTags(selection).ToList(),
+            Category = BuildAutoSubmissionCategory(selection),
+            GameModes = BuildAutoSubmissionGameModes(selection).ToList(),
+            Jobs = BuildAutoSubmissionJobs(selection).ToList(),
+            TriggerTypes = BuildAutoSubmissionTriggerTypes(selection).ToList(),
+            CompatiblePluginVersion = "0.2.5+",
+            License = "个人投稿，仅限插件社区内使用"
         };
 
         manifest.Readme = BuildAutoSubmissionReadme(manifest, selection);
@@ -308,6 +437,7 @@ public sealed partial class MainWindow
             ? "我的音效"
             : selection.DisplayName;
         submissionOutputPath = sfxPackService.BuildDefaultSubmissionPath(submissionPackageName);
+        submissionPreflight = null;
     }
 
     private string BuildAutoSubmissionDescription(SubmissionSelection selection)
@@ -355,6 +485,59 @@ public sealed partial class MainWindow
 
         return tags.Take(8);
     }
+
+    private static string BuildAutoSubmissionCategory(SubmissionSelection selection)
+    {
+        var triggerTypes = selection.Rules
+            .Select(rule => rule.Trigger?.Type ?? string.Empty)
+            .Where(type => type.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (triggerTypes.Any(type => type is "SkillUsed" or "StatusGained" or "StatusLost" or "JobChanged"))
+            return "职业技能";
+        if (triggerTypes.Any(type => type is "CombatEntered" or "CombatExited" or "Kill" or "LocalPlayerDefeated" or "HpChanged" or "HpLow"))
+            return "战斗提醒";
+        if (triggerTypes.Any(type => type is "MapChanged" or "ItemAcquired"))
+            return "日常玩法";
+
+        return "玩家投稿";
+    }
+
+    private static IEnumerable<string> BuildAutoSubmissionGameModes(SubmissionSelection selection)
+    {
+        var modes = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+        var haystack = $"{selection.DisplayName} {string.Join(' ', selection.Rules.Select(rule => rule.Name))}";
+        if (ContainsAny(haystack, "pvp", "PVP", "战场", "水晶冲突", "纷争前线"))
+            modes.Add("PVP");
+        if (ContainsAny(haystack, "pve", "PVE", "高难", "零式", "绝本", "副本", "讨伐"))
+            modes.Add("PVE");
+        if (selection.Rules.Any(rule => rule.Trigger?.Type is "CombatEntered" or "CombatExited" or "Kill" or "HpChanged" or "HpLow"))
+            modes.Add("战斗");
+        if (selection.Rules.Any(rule => rule.Trigger?.Type is "MapChanged" or "ItemAcquired"))
+            modes.Add("日常");
+
+        return modes.Count == 0 ? ["通用"] : modes.Take(6);
+    }
+
+    private static IEnumerable<string> BuildAutoSubmissionJobs(SubmissionSelection selection)
+    {
+        var jobs = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+        var haystack = $"{selection.DisplayName} {string.Join(' ', selection.Rules.Select(rule => $"{rule.Name} {rule.Trigger?.JobNameContains} {rule.Trigger?.SkillNameContains}"))}";
+        foreach (var keyword in new[] { "武士", "蝰蛇", "黑魔", "白魔", "忍者", "龙骑", "机工", "诗人", "召唤", "学者", "占星", "贤者", "战士", "骑士", "暗黑", "绝枪" })
+        {
+            if (haystack.Contains(keyword, StringComparison.CurrentCultureIgnoreCase))
+                jobs.Add(keyword);
+        }
+
+        return jobs.Take(8);
+    }
+
+    private static IEnumerable<string> BuildAutoSubmissionTriggerTypes(SubmissionSelection selection)
+        => selection.Rules
+            .Select(rule => rule.Trigger?.Type ?? string.Empty)
+            .Where(type => type.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8);
 
     private string BuildAutoSubmissionReadme(CommunitySubmissionManifest manifest, SubmissionSelection selection)
     {
@@ -528,7 +711,10 @@ public sealed partial class MainWindow
             };
 
             if (dialog.ShowDialog() == DialogResult.OK)
+            {
                 submissionCoverPath = dialog.FileName;
+                submissionPreflight = null;
+            }
         }
         catch (Exception ex)
         {
@@ -629,6 +815,22 @@ public sealed partial class MainWindow
         DrawInputText("标签，逗号分隔##ReviewTags", reviewTagsText, 220, value => reviewTagsText = value, 420f);
         DrawInputText("简介##ReviewDescription", reviewDescription, 260, value => reviewDescription = value, 520f);
 
+        if (ImGui.CollapsingHeader("索引 v2 字段"))
+        {
+            DrawInputText("分类##ReviewCategory", reviewCategory, 80, value => reviewCategory = value, 220f);
+            DrawInputText("玩法，逗号分隔##ReviewGameModes", reviewGameModesText, 160, value => reviewGameModesText = value, 360f);
+            DrawInputText("职业，逗号分隔##ReviewJobs", reviewJobsText, 160, value => reviewJobsText = value, 360f);
+            DrawInputText("触发器，逗号分隔##ReviewTriggers", reviewTriggerTypesText, 220, value => reviewTriggerTypesText = value, 420f);
+            DrawInputText("兼容插件版本##ReviewCompatiblePlugin", reviewCompatiblePluginVersion, 80, value => reviewCompatiblePluginVersion = value, 180f);
+            DrawInputText("许可证##ReviewLicense", reviewLicense, 160, value => reviewLicense = value, 360f);
+            DrawInputText("内容提醒##ReviewContentWarning", reviewContentWarning, 180, value => reviewContentWarning = value, 420f);
+            DrawInputText("更新日志##ReviewChangelog", reviewChangelog, 260, value => reviewChangelog = value, 520f);
+            DrawInputText("更新日志链接##ReviewChangelogUrl", reviewChangelogUrl, 260, value => reviewChangelogUrl = value, 520f);
+            ImGui.Checkbox("标记为弃用##ReviewDeprecated", ref reviewDeprecated);
+            ImGui.SameLine();
+            ImGui.Checkbox("从普通列表隐藏##ReviewHidden", ref reviewHidden);
+        }
+
         DrawInputText("审核封面，可覆盖包内封面##ReviewCoverPath", reviewCoverPath, 520, value => reviewCoverPath = value);
         ImGui.SameLine();
         if (ImGui.Button("选择封面##PickReviewCover"))
@@ -698,7 +900,18 @@ public sealed partial class MainWindow
                 Description = reviewDescription,
                 PackageVersion = reviewVersion,
                 TagsText = reviewTagsText,
+                Category = reviewCategory,
+                GameModesText = reviewGameModesText,
+                JobsText = reviewJobsText,
+                TriggerTypesText = reviewTriggerTypesText,
+                CompatiblePluginVersion = reviewCompatiblePluginVersion,
+                License = reviewLicense,
+                ContentWarning = reviewContentWarning,
+                Changelog = reviewChangelog,
+                ChangelogUrl = reviewChangelogUrl,
                 Readme = reviewReadme,
+                Deprecated = reviewDeprecated,
+                Hidden = reviewHidden,
                 AllowOverwrite = reviewAllowOverwrite,
                 PushToRemote = reviewPushToRemote
             };
@@ -725,6 +938,15 @@ public sealed partial class MainWindow
             reviewPackId = FirstNonEmpty(reviewPackId, manifest?.Id ?? string.Empty, BuildEnglishId(reviewPackName));
             reviewDescription = FirstNonEmpty(reviewDescription, manifest?.Description ?? string.Empty, $"由玩家投稿的「{reviewPackName}」音效包。");
             reviewTagsText = FirstNonEmpty(reviewTagsText, manifest == null ? string.Empty : string.Join("，", manifest.Tags), "玩家投稿");
+            reviewCategory = FirstNonEmpty(reviewCategory, manifest?.Category ?? string.Empty, "玩家投稿");
+            reviewGameModesText = FirstNonEmpty(reviewGameModesText, manifest == null ? string.Empty : string.Join("，", manifest.GameModes));
+            reviewJobsText = FirstNonEmpty(reviewJobsText, manifest == null ? string.Empty : string.Join("，", manifest.Jobs));
+            reviewTriggerTypesText = FirstNonEmpty(reviewTriggerTypesText, manifest == null ? string.Empty : string.Join("，", manifest.TriggerTypes));
+            reviewCompatiblePluginVersion = FirstNonEmpty(reviewCompatiblePluginVersion, manifest?.CompatiblePluginVersion ?? string.Empty, "0.2.5+");
+            reviewLicense = FirstNonEmpty(reviewLicense, manifest?.License ?? string.Empty, "个人投稿，仅限插件社区内使用");
+            reviewContentWarning = FirstNonEmpty(reviewContentWarning, manifest?.ContentWarning ?? string.Empty);
+            reviewChangelog = FirstNonEmpty(reviewChangelog);
+            reviewChangelogUrl = FirstNonEmpty(reviewChangelogUrl);
             reviewReadme = FirstNonEmpty(reviewReadme, manifest?.Readme ?? string.Empty, reviewValidation.Readme, BuildFallbackReviewReadme());
             reviewMessage = "待审包预览已加载。";
         }
@@ -801,6 +1023,17 @@ public sealed partial class MainWindow
                 reviewPackName = string.Empty;
                 reviewDescription = string.Empty;
                 reviewTagsText = string.Empty;
+                reviewCategory = string.Empty;
+                reviewGameModesText = string.Empty;
+                reviewJobsText = string.Empty;
+                reviewTriggerTypesText = string.Empty;
+                reviewCompatiblePluginVersion = string.Empty;
+                reviewLicense = string.Empty;
+                reviewContentWarning = string.Empty;
+                reviewChangelog = string.Empty;
+                reviewChangelogUrl = string.Empty;
+                reviewDeprecated = false;
+                reviewHidden = false;
                 reviewReadme = string.Empty;
                 PreviewReviewPackage();
             }

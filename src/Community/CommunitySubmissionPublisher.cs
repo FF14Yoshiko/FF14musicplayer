@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using AllTimeSoundTrigger.ConfigurationModels;
+using AllTimeSoundTrigger.Services;
 using AllTimeSoundTrigger.Utilities;
 
 namespace AllTimeSoundTrigger.Community;
@@ -65,7 +66,7 @@ public static class CommunitySubmissionPublisher
         var readmeText = BuildReadme(request, manifest, validation);
         File.WriteAllText(Path.Combine(packDirectory, "README.txt"), readmeText, new UTF8Encoding(false));
 
-        var pack = BuildPackInfo(repositoryPath, packId, destinationPackagePath, coverPath, manifest);
+        var pack = BuildPackInfo(repositoryPath, packId, destinationPackagePath, coverPath, manifest, request, validation);
         UpdateIndex(repositoryPath, pack);
 
         gitOutput.AppendLine(RunGit(repositoryPath, "add", "index.json", $"packs/{packId}"));
@@ -89,6 +90,7 @@ public static class CommunitySubmissionPublisher
     public static CommunitySubmissionValidation ValidatePackage(string packagePath)
     {
         using var archive = ZipFile.OpenRead(packagePath);
+        SfxPackSecurity.ValidateArchive(archive);
         var entries = archive.Entries
             .Where(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal))
             .ToArray();
@@ -128,6 +130,24 @@ public static class CommunitySubmissionPublisher
             manifest.Tags = tags.ToList();
         if (manifest.Tags.Count == 0)
             manifest.Tags = ["玩家投稿"];
+
+        manifest.Category = FirstNonEmpty(request.Category, manifest.Category, "玩家投稿");
+
+        var gameModes = SplitTags(request.GameModesText);
+        if (gameModes.Count > 0)
+            manifest.GameModes = gameModes.ToList();
+        var jobs = SplitTags(request.JobsText);
+        if (jobs.Count > 0)
+            manifest.Jobs = jobs.ToList();
+        var triggerTypes = SplitTags(request.TriggerTypesText);
+        if (triggerTypes.Count > 0)
+            manifest.TriggerTypes = triggerTypes.ToList();
+        if (manifest.GameModes.Count == 0)
+            manifest.GameModes = ["通用"];
+
+        manifest.CompatiblePluginVersion = FirstNonEmpty(request.CompatiblePluginVersion, manifest.CompatiblePluginVersion);
+        manifest.License = FirstNonEmpty(request.License, manifest.License, "个人投稿，仅限插件社区内使用");
+        manifest.ContentWarning = FirstNonEmpty(request.ContentWarning, manifest.ContentWarning);
 
         if (!string.IsNullOrWhiteSpace(request.Readme))
             manifest.Readme = request.Readme.Trim();
@@ -205,7 +225,7 @@ public static class CommunitySubmissionPublisher
         var entry = archive.Entries.First(item => NormalizeZipPath(item.FullName).Equals(validation.CoverEntryName, StringComparison.OrdinalIgnoreCase));
         var embeddedExtension = Path.GetExtension(entry.FullName).ToLowerInvariant();
         var embeddedDestination = Path.Combine(packDirectory, $"cover{embeddedExtension}");
-        entry.ExtractToFile(embeddedDestination, true);
+        SfxPackSecurity.ExtractToFileLimited(entry, embeddedDestination, MaxCoverBytes);
         return embeddedDestination;
     }
 
@@ -214,9 +234,12 @@ public static class CommunitySubmissionPublisher
         string packId,
         string packagePath,
         string coverPath,
-        CommunitySubmissionManifest manifest)
+        CommunitySubmissionManifest manifest,
+        CommunityPublishRequest request,
+        CommunitySubmissionValidation validation)
     {
         var relativePackage = ToRepoRelativePath(repositoryPath, packagePath);
+        var packageUrl = $"{RawBaseUrl}/{relativePackage}";
         var relativeReadme = $"packs/{packId}/README.txt";
         var pack = new CommunityPackInfo
         {
@@ -224,16 +247,35 @@ public static class CommunitySubmissionPublisher
             Name = manifest.Name,
             Author = manifest.Author,
             Description = manifest.Description,
-            PackageUrl = $"{RawBaseUrl}/{relativePackage}",
+            PackageUrl = packageUrl,
+            SourcePackageUrl = packageUrl,
             ReadmeUrl = $"{RawBaseUrl}/{relativeReadme}",
             Version = manifest.PackageVersion,
             SizeBytes = new FileInfo(packagePath).Length,
             Sha256 = ComputeSha256(packagePath),
-            Tags = manifest.Tags.ToList()
+            GroupCount = validation.GroupCount,
+            RuleCount = validation.RuleCount,
+            SoundCount = validation.SoundCount,
+            Tags = manifest.Tags.ToList(),
+            Category = manifest.Category,
+            GameModes = manifest.GameModes.ToList(),
+            Jobs = manifest.Jobs.ToList(),
+            TriggerTypes = manifest.TriggerTypes.ToList(),
+            CompatiblePluginVersion = manifest.CompatiblePluginVersion,
+            License = manifest.License,
+            ContentWarning = manifest.ContentWarning,
+            Changelog = request.Changelog,
+            ChangelogUrl = request.ChangelogUrl,
+            ReleaseNotesUrl = request.ChangelogUrl,
+            Deprecated = request.Deprecated,
+            Hidden = request.Hidden
         };
 
         if (!string.IsNullOrWhiteSpace(coverPath))
+        {
             pack.CoverUrl = $"{RawBaseUrl}/{ToRepoRelativePath(repositoryPath, coverPath)}";
+            pack.CoverSha256 = ComputeSha256(coverPath);
+        }
 
         pack.Normalize();
         return pack;
@@ -246,9 +288,26 @@ public static class CommunitySubmissionPublisher
             ? JsonSerializer.Deserialize<CommunityPackIndex>(File.ReadAllText(indexPath), SerializerOptions) ?? new CommunityPackIndex()
             : new CommunityPackIndex();
 
+        var now = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
+        var existing = index.Packs.FirstOrDefault(item => item.Id.Equals(pack.Id, StringComparison.OrdinalIgnoreCase));
+        pack.CreatedAt = FirstNonEmpty(pack.CreatedAt, existing?.CreatedAt ?? string.Empty, now);
+        pack.DownloadCount = Math.Max(pack.DownloadCount, existing?.DownloadCount ?? 0);
+        pack.Changelog = FirstNonEmpty(pack.Changelog, existing?.Changelog ?? string.Empty);
+        pack.ChangelogUrl = FirstNonEmpty(pack.ChangelogUrl, existing?.ChangelogUrl ?? string.Empty);
+        pack.ReleaseNotesUrl = FirstNonEmpty(pack.ReleaseNotesUrl, existing?.ReleaseNotesUrl ?? string.Empty, pack.ChangelogUrl);
+        if (existing != null
+            && !string.IsNullOrWhiteSpace(existing.SourcePackageUrl)
+            && !string.IsNullOrWhiteSpace(existing.PackageUrl)
+            && !existing.PackageUrl.Equals(existing.SourcePackageUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            pack.PackageUrl = existing.PackageUrl;
+        }
+
+        pack.UpdatedAt = now;
+        index.Version = Math.Max(index.Version, 2);
         index.Packs.RemoveAll(item => item.Id.Equals(pack.Id, StringComparison.OrdinalIgnoreCase));
         index.Packs.Add(pack);
-        index.UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
+        index.UpdatedAt = now;
         index.Normalize();
         File.WriteAllText(indexPath, JsonSerializer.Serialize(index, SerializerOptions), new UTF8Encoding(false));
     }

@@ -20,7 +20,29 @@ public sealed class CommunityPublishRequest
 
     public string TagsText { get; set; } = string.Empty;
 
+    public string Category { get; set; } = string.Empty;
+
+    public string GameModesText { get; set; } = string.Empty;
+
+    public string JobsText { get; set; } = string.Empty;
+
+    public string TriggerTypesText { get; set; } = string.Empty;
+
+    public string CompatiblePluginVersion { get; set; } = string.Empty;
+
+    public string License { get; set; } = string.Empty;
+
+    public string ContentWarning { get; set; } = string.Empty;
+
+    public string Changelog { get; set; } = string.Empty;
+
+    public string ChangelogUrl { get; set; } = string.Empty;
+
     public string Readme { get; set; } = string.Empty;
+
+    public bool Deprecated { get; set; }
+
+    public bool Hidden { get; set; }
 
     public bool AllowOverwrite { get; set; }
 

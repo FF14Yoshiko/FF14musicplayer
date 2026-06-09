@@ -6,7 +6,7 @@ namespace AllTimeSoundTrigger.Community;
 
 public sealed class CommunityPackIndex
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public string UpdatedAt { get; set; } = string.Empty;
 
@@ -14,6 +14,9 @@ public sealed class CommunityPackIndex
 
     public void Normalize()
     {
+        if (Version <= 0)
+            Version = 1;
+
         Packs ??= [];
         foreach (var pack in Packs)
             pack.Normalize();
@@ -26,4 +29,3 @@ public sealed class CommunityPackIndex
             .ToList();
     }
 }
-

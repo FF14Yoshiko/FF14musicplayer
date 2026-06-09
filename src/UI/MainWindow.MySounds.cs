@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AllTimeSoundTrigger.Audio;
+using AllTimeSoundTrigger.Community;
 using AllTimeSoundTrigger.ConfigurationModels;
 using Dalamud.Bindings.ImGui;
 
@@ -43,14 +44,23 @@ public sealed partial class MainWindow
     private void DrawMySoundsTab()
     {
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), "我的音效");
-        ImGui.SameLine();
-        if (ImGui.Button("新建规则向导"))
-            StartRuleWizard();
+        ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), GetMySoundsTabLabel());
+        ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), GetExperienceModeHint(configuration.ExperienceMode));
 
-        ImGui.SameLine();
-        if (ImGui.Button("去音效库导入音效"))
-            RequestTab("library");
+        if (CanEditRules())
+        {
+            if (ImGui.Button("新建规则向导"))
+                StartRuleWizard();
+
+            ImGui.SameLine();
+            if (ImGui.Button("去音效库导入音效"))
+                RequestTab("library");
+        }
+        else
+        {
+            if (ImGui.Button("逛社区音效包"))
+                RequestTab("community");
+        }
 
         if (ruleWizardOpen)
         {
@@ -59,26 +69,255 @@ public sealed partial class MainWindow
         }
 
         ImGui.Separator();
-        DrawMySoundGroups();
+        var installedPackCount = DrawInstalledCommunityPackCards();
+        var hasUnmanagedGroups = HasUnmanagedSoundGroups();
+        if (CanEditRules())
+        {
+            ImGui.Separator();
+            DrawMySoundGroups();
+        }
+        else if (hasUnmanagedGroups)
+        {
+            ImGui.Separator();
+            if (ImGui.CollapsingHeader("其他手动内容 / 旧分组"))
+                DrawMySoundGroups(true);
+        }
+        else if (installedPackCount == 0)
+        {
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "还没有已安装音效包。");
+            if (ImGui.Button("去社区安装音效包##MineInstallFirstPack"))
+                RequestTab("community");
+        }
 
         ImGui.Separator();
-        if (ImGui.CollapsingHeader("投稿中心"))
+        if (CanEditRules() && ImGui.CollapsingHeader("投稿中心"))
             DrawCommunitySubmissionPanel();
     }
 
-    private void DrawMySoundGroups()
+    private int DrawInstalledCommunityPackCards()
+    {
+        var installedPacks = communityPackService.InstalledPacks
+            .OrderBy(pack => pack.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+        ImGui.TextColored(new Vector4(0.30f, 0.78f, 1f, 1f), "已安装音效包");
+        if (installedPacks.Length == 0)
+        {
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "这里会显示从社区安装的音效包。");
+            return 0;
+        }
+
+        foreach (var installed in installedPacks)
+            DrawInstalledCommunityPackCard(installed);
+
+        return installedPacks.Length;
+    }
+
+    private void DrawInstalledCommunityPackCard(CommunityInstalledPack installed)
+    {
+        var indexPack = FindCommunityPackInfo(installed);
+        var pack = indexPack ?? CreateFallbackCommunityPackInfo(installed);
+        var stats = GetInstalledCommunityPackStats(installed);
+        var enabled = stats.GroupCount > 0 && AreInstalledCommunityPackGroupsEnabled(installed);
+        var statusColor = stats.GroupCount == 0
+            ? new Vector4(1f, 0.58f, 0.30f, 1f)
+            : enabled
+                ? new Vector4(0.48f, 0.90f, 0.62f, 1f)
+                : new Vector4(1f, 0.78f, 0.30f, 1f);
+        var statusText = stats.GroupCount == 0 ? "分组缺失" : enabled ? "启用中" : "已停用";
+        var updateStatus = GetInstalledCommunityPackUpdateStatus(installed, indexPack);
+        var showUpdateNotes = updateStatus.Kind == InstalledPackUpdateKind.UpdateAvailable && indexPack != null;
+
+        ImGui.PushID($"InstalledPack{installed.Id}");
+        if (ImGui.BeginChild("##InstalledPackCard", new Vector2(0, showUpdateNotes ? 164f : 126f), true))
+        {
+            ImGui.TextColored(new Vector4(0.92f, 0.94f, 0.96f, 1f), installed.Name);
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), $"v{installed.Version}");
+            ImGui.SameLine();
+            ImGui.TextColored(statusColor, statusText);
+
+            ImGui.TextColored(
+                new Vector4(0.70f, 0.72f, 0.76f, 1f),
+                $"规则 {stats.RuleCount} / 音效 {stats.SoundCount} / 分组 {stats.GroupCount}");
+            ImGui.TextColored(GetInstalledCommunityPackUpdateColor(updateStatus), updateStatus.Text);
+
+            if (communityInstallMessages.TryGetValue(installed.Id, out var message) && !string.IsNullOrWhiteSpace(message))
+                ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), message);
+
+            if (showUpdateNotes)
+                DrawInstalledCommunityPackUpdateNotes(indexPack!);
+
+            ImGui.BeginDisabled(stats.GroupCount == 0);
+            if (ImGui.SmallButton("查看"))
+                JumpToInstalledCommunityPack(installed);
+            ImGui.SameLine();
+            if (ImGui.SmallButton(enabled ? "停用" : "启用"))
+                SetInstalledCommunityPackEnabled(installed, !enabled);
+            ImGui.EndDisabled();
+
+            if (updateStatus.Kind == InstalledPackUpdateKind.UpdateAvailable)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("去更新"))
+                {
+                    communityDetailPackId = installed.Id;
+                    RequestTab("community");
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("卸载"))
+            {
+                var name = installed.Name;
+                UninstallCommunityPack(pack, installed, false);
+                windowMessage = $"已卸载音效包：{name}";
+            }
+        }
+
+        ImGui.EndChild();
+        ImGui.PopID();
+    }
+
+    private CommunityPackInfo? FindCommunityPackInfo(CommunityInstalledPack installed)
+        => communityPackService.Packs.FirstOrDefault(pack => pack.Id.Equals(installed.Id, StringComparison.OrdinalIgnoreCase));
+
+    private static void DrawInstalledCommunityPackUpdateNotes(CommunityPackInfo pack)
+    {
+        ImGui.TextWrapped($"更新说明：{TrimCommunityPreview(FormatCommunityChangelog(pack), 120)}");
+        var releaseNotesUrl = GetCommunityReleaseNotesUrl(pack);
+        if (!string.IsNullOrWhiteSpace(releaseNotesUrl))
+        {
+            if (ImGui.SmallButton("打开更新日志"))
+                OpenCommunityUrl(releaseNotesUrl);
+        }
+    }
+
+    private static string TrimCommunityPreview(string value, int maxLength)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length <= maxLength)
+            return text;
+
+        return $"{text[..Math.Max(0, maxLength - 3)]}...";
+    }
+
+    private static CommunityPackInfo CreateFallbackCommunityPackInfo(CommunityInstalledPack installed)
+    {
+        var pack = new CommunityPackInfo
+        {
+            Id = installed.Id,
+            Name = installed.Name,
+            Version = installed.Version
+        };
+        pack.Normalize();
+        return pack;
+    }
+
+    private InstalledCommunityPackStats GetInstalledCommunityPackStats(CommunityInstalledPack installed)
+    {
+        var groupIds = installed.GroupIds.ToHashSet(StringComparer.Ordinal);
+        var groups = profileStorageService.ActiveProfile.Groups
+            .Where(group => groupIds.Contains(group.Id))
+            .ToArray();
+        var ruleCount = groups.Sum(group => group.Rules.Count);
+        var soundCount = installed.SoundIds.Count > 0
+            ? installed.SoundIds.Count
+            : CountSoundReferences(groups);
+        return new InstalledCommunityPackStats(groups.Length, ruleCount, soundCount);
+    }
+
+    private InstalledPackUpdateStatus GetInstalledCommunityPackUpdateStatus(
+        CommunityInstalledPack installed,
+        CommunityPackInfo? pack)
+    {
+        if (pack == null)
+        {
+            return communityPackService.Packs.Count == 0
+                ? new InstalledPackUpdateStatus(InstalledPackUpdateKind.Unknown, "刷新社区列表后检查更新")
+                : new InstalledPackUpdateStatus(InstalledPackUpdateKind.NotInIndex, "当前社区列表未收录");
+        }
+
+        if (pack.Hidden)
+            return new InstalledPackUpdateStatus(InstalledPackUpdateKind.Warning, "社区包已隐藏");
+        if (pack.Deprecated)
+            return new InstalledPackUpdateStatus(InstalledPackUpdateKind.Warning, "社区包已弃用");
+        if (!pack.Version.Equals(installed.Version, StringComparison.OrdinalIgnoreCase))
+            return new InstalledPackUpdateStatus(InstalledPackUpdateKind.UpdateAvailable, $"可更新到 v{pack.Version}");
+
+        return new InstalledPackUpdateStatus(InstalledPackUpdateKind.Current, "已是最新");
+    }
+
+    private static Vector4 GetInstalledCommunityPackUpdateColor(InstalledPackUpdateStatus status)
+        => status.Kind switch
+        {
+            InstalledPackUpdateKind.Current => new Vector4(0.48f, 0.90f, 0.62f, 1f),
+            InstalledPackUpdateKind.UpdateAvailable => new Vector4(1f, 0.78f, 0.30f, 1f),
+            InstalledPackUpdateKind.Warning => new Vector4(1f, 0.58f, 0.30f, 1f),
+            _ => new Vector4(0.70f, 0.72f, 0.76f, 1f)
+        };
+
+    private bool HasUnmanagedSoundGroups()
+    {
+        var installedGroupIds = GetInstalledCommunityGroupIds();
+        return profileStorageService.ActiveProfile.Groups
+            .Any(group => !installedGroupIds.Contains(group.Id) && group.Rules.Count > 0);
+    }
+
+    private IReadOnlySet<string> GetInstalledCommunityGroupIds()
+        => communityPackService.InstalledPacks
+            .SelectMany(pack => pack.GroupIds)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static int CountSoundReferences(IEnumerable<RuleGroupDefinition> groups)
+    {
+        var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in groups.SelectMany(group => group.Rules).SelectMany(rule => rule.Actions ?? []))
+        {
+            if (!action.Type.Equals("Sound", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            AddSoundReference(values, action.SoundId);
+            foreach (var soundId in action.SoundIds ?? [])
+                AddSoundReference(values, soundId);
+            AddSoundReference(values, action.FilePath);
+            foreach (var filePath in action.FilePaths ?? [])
+                AddSoundReference(values, filePath);
+        }
+
+        return values.Count;
+    }
+
+    private static void AddSoundReference(ISet<string> values, string value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length > 0)
+            values.Add(normalized);
+    }
+
+    private void DrawMySoundGroups(bool unmanagedOnly = false)
     {
         var profile = profileStorageService.ActiveProfile;
         profile.Normalize();
-        if (!profile.EnumerateRules().Any())
+        IReadOnlySet<string> installedGroupIds = unmanagedOnly
+            ? GetInstalledCommunityGroupIds()
+            : new HashSet<string>(StringComparer.Ordinal);
+        var groups = unmanagedOnly
+            ? profile.Groups.Where(group => !installedGroupIds.Contains(group.Id)).ToArray()
+            : profile.Groups.ToArray();
+        if (!groups.SelectMany(group => group.Rules).Any())
         {
-            ImGui.TextColored(new Vector4(0.70f, 0.72f, 0.76f, 1f), "现在还没有规则。");
-            if (ImGui.Button("用向导创建第一条规则"))
+            ImGui.TextColored(
+                new Vector4(0.70f, 0.72f, 0.76f, 1f),
+                CanEditRules() ? "现在还没有规则。" : "现在没有其他手动内容。");
+            if (CanEditRules() && ImGui.Button("用向导创建第一条规则"))
                 StartRuleWizard();
+            if (!CanEditRules() && ImGui.Button("去社区安装音效包"))
+                RequestTab("community");
             return;
         }
 
-        foreach (var group in profile.Groups.ToArray())
+        foreach (var group in groups)
         {
             var groupState = group.Enabled ? string.Empty : "（已停用）";
             if (!ImGui.CollapsingHeader($"{group.Name}{groupState} ({group.Rules.Count})##MyGroup{group.Id}", ImGuiTreeNodeFlags.DefaultOpen))
@@ -92,15 +331,17 @@ public sealed partial class MainWindow
             }
 
             ImGui.SameLine();
-            if (ImGui.SmallButton($"新建规则到这个分组##MyAddRule{group.Id}"))
+            if (CanEditRules() && ImGui.SmallButton($"新建规则到这个分组##MyAddRule{group.Id}"))
             {
                 ruleWizardGroupId = group.Id;
                 StartRuleWizard();
                 ruleWizardGroupId = group.Id;
             }
 
-            ImGui.SameLine();
-            var deleteGroup = ImGui.SmallButton($"删除分组##MyDeleteGroup{group.Id}");
+            if (CanEditRules())
+                ImGui.SameLine();
+            var deleteLabel = CanEditRules() ? "删除分组" : "删除这个音效包";
+            var deleteGroup = ImGui.SmallButton($"{deleteLabel}##MyDeleteGroup{group.Id}");
             if (deleteGroup)
             {
                 DeleteGroup(group);
@@ -509,4 +750,17 @@ public sealed partial class MainWindow
             HpPercentBelow = source.HpPercentBelow,
             LocalPlayerOnly = source.LocalPlayerOnly
         };
+
+    private sealed record InstalledCommunityPackStats(int GroupCount, int RuleCount, int SoundCount);
+
+    private sealed record InstalledPackUpdateStatus(InstalledPackUpdateKind Kind, string Text);
+
+    private enum InstalledPackUpdateKind
+    {
+        Current,
+        UpdateAvailable,
+        Warning,
+        Unknown,
+        NotInIndex
+    }
 }

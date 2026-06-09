@@ -1,21 +1,24 @@
 using System;
+using System.Collections.Generic;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources.Payloads;
 
 namespace AllTimeSoundTrigger.Rules.Triggers;
 
-public sealed class SkillUsedTrigger : ITrigger
+public sealed class SkillUsedTrigger : IEventIndexedTrigger
 {
-    private readonly string actorName;
-    private readonly string skillNameContains;
+    private readonly TriggerTextFilter actorName;
+    private readonly TriggerTextFilter skillNameContains;
     private readonly bool localPlayerOnly;
 
     public SkillUsedTrigger(string actorName, string skillNameContains, bool localPlayerOnly)
     {
-        this.actorName = actorName.Trim();
-        this.skillNameContains = skillNameContains.Trim();
+        this.actorName = new TriggerTextFilter(actorName);
+        this.skillNameContains = new TriggerTextFilter(skillNameContains);
         this.localPlayerOnly = localPlayerOnly;
     }
+
+    public IReadOnlyList<string> EventTypes { get; } = ["SkillUsed"];
 
     public bool IsMatch(GameEvent e)
     {
@@ -28,10 +31,9 @@ public sealed class SkillUsedTrigger : ITrigger
         if (localPlayerOnly && !payload.IsLocalPlayer)
             return false;
 
-        if (actorName.Length > 0 && !payload.ActorName.Contains(actorName, StringComparison.OrdinalIgnoreCase))
+        if (actorName.DoesNotMatch(payload.ActorName))
             return false;
 
-        return skillNameContains.Length == 0
-            || payload.SkillName.Contains(skillNameContains, StringComparison.OrdinalIgnoreCase);
+        return skillNameContains.Matches(payload.SkillName);
     }
 }

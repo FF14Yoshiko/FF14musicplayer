@@ -92,6 +92,7 @@ public sealed class Plugin : IDalamudPlugin
             textureProvider,
             Configuration,
             ReloadRulesFromConfiguration,
+            rulesEngine.SnapshotRuntime,
             pluginInterface.AssemblyLocation.DirectoryName ?? string.Empty);
         windowSystem.AddWindow(mainWindow);
 

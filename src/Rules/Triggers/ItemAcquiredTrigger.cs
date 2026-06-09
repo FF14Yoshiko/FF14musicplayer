@@ -1,21 +1,24 @@
 using System;
+using System.Collections.Generic;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources.Payloads;
 
 namespace AllTimeSoundTrigger.Rules.Triggers;
 
-public sealed class ItemAcquiredTrigger : ITrigger
+public sealed class ItemAcquiredTrigger : IEventIndexedTrigger
 {
-    private readonly string actorName;
-    private readonly string itemNameContains;
+    private readonly TriggerTextFilter actorName;
+    private readonly TriggerTextFilter itemNameContains;
     private readonly bool localPlayerOnly;
 
     public ItemAcquiredTrigger(string actorName, string itemNameContains, bool localPlayerOnly)
     {
-        this.actorName = actorName.Trim();
-        this.itemNameContains = itemNameContains.Trim();
+        this.actorName = new TriggerTextFilter(actorName);
+        this.itemNameContains = new TriggerTextFilter(itemNameContains);
         this.localPlayerOnly = localPlayerOnly;
     }
+
+    public IReadOnlyList<string> EventTypes { get; } = ["ItemAcquired"];
 
     public bool IsMatch(GameEvent e)
     {
@@ -28,10 +31,9 @@ public sealed class ItemAcquiredTrigger : ITrigger
         if (localPlayerOnly && !payload.IsLocalPlayer)
             return false;
 
-        if (actorName.Length > 0 && !payload.ActorName.Contains(actorName, StringComparison.OrdinalIgnoreCase))
+        if (actorName.DoesNotMatch(payload.ActorName))
             return false;
 
-        return itemNameContains.Length == 0
-            || payload.ItemName.Contains(itemNameContains, StringComparison.OrdinalIgnoreCase);
+        return itemNameContains.Matches(payload.ItemName);
     }
 }

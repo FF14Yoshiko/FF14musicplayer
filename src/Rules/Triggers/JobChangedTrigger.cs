@@ -1,19 +1,22 @@
 using System;
+using System.Collections.Generic;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources.Payloads;
 
 namespace AllTimeSoundTrigger.Rules.Triggers;
 
-public sealed class JobChangedTrigger : ITrigger
+public sealed class JobChangedTrigger : IEventIndexedTrigger
 {
     private readonly uint classJobId;
-    private readonly string jobNameContains;
+    private readonly TriggerTextFilter jobNameContains;
 
     public JobChangedTrigger(int classJobId, string jobNameContains)
     {
         this.classJobId = classJobId > 0 ? (uint)classJobId : 0;
-        this.jobNameContains = jobNameContains.Trim();
+        this.jobNameContains = new TriggerTextFilter(jobNameContains);
     }
+
+    public IReadOnlyList<string> EventTypes { get; } = ["JobChanged"];
 
     public bool IsMatch(GameEvent e)
     {
@@ -26,7 +29,6 @@ public sealed class JobChangedTrigger : ITrigger
         if (classJobId > 0 && payload.ClassJobId != classJobId)
             return false;
 
-        return jobNameContains.Length == 0
-            || payload.JobName.Contains(jobNameContains, StringComparison.OrdinalIgnoreCase);
+        return jobNameContains.Matches(payload.JobName);
     }
 }

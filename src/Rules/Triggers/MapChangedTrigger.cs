@@ -1,10 +1,11 @@
 using System;
+using System.Collections.Generic;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources.Payloads;
 
 namespace AllTimeSoundTrigger.Rules.Triggers;
 
-public sealed class MapChangedTrigger : ITrigger
+public sealed class MapChangedTrigger : IEventIndexedTrigger
 {
     private readonly uint territoryType;
     private readonly uint mapId;
@@ -14,6 +15,8 @@ public sealed class MapChangedTrigger : ITrigger
         this.territoryType = territoryType > 0 ? (uint)territoryType : 0;
         this.mapId = mapId > 0 ? (uint)mapId : 0;
     }
+
+    public IReadOnlyList<string> EventTypes { get; } = ["MapChanged"];
 
     public bool IsMatch(GameEvent e)
     {

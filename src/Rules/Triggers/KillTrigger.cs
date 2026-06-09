@@ -1,21 +1,24 @@
 using System;
+using System.Collections.Generic;
 using AllTimeSoundTrigger.Core;
 using AllTimeSoundTrigger.EventSources.Payloads;
 
 namespace AllTimeSoundTrigger.Rules.Triggers;
 
-public sealed class KillTrigger : ITrigger
+public sealed class KillTrigger : IEventIndexedTrigger
 {
-    private readonly string actorName;
-    private readonly string targetName;
+    private readonly TriggerTextFilter actorName;
+    private readonly TriggerTextFilter targetName;
     private readonly bool localPlayerOnly;
 
     public KillTrigger(string actorName, string targetName, bool localPlayerOnly)
     {
-        this.actorName = actorName.Trim();
-        this.targetName = targetName.Trim();
+        this.actorName = new TriggerTextFilter(actorName);
+        this.targetName = new TriggerTextFilter(targetName);
         this.localPlayerOnly = localPlayerOnly;
     }
+
+    public IReadOnlyList<string> EventTypes { get; } = ["Kill"];
 
     public bool IsMatch(GameEvent e)
     {
@@ -28,10 +31,9 @@ public sealed class KillTrigger : ITrigger
         if (localPlayerOnly && !payload.IsLocalPlayerKill)
             return false;
 
-        if (actorName.Length > 0 && !payload.ActorName.Contains(actorName, StringComparison.OrdinalIgnoreCase))
+        if (actorName.DoesNotMatch(payload.ActorName))
             return false;
 
-        return targetName.Length == 0
-            || payload.TargetName.Contains(targetName, StringComparison.OrdinalIgnoreCase);
+        return targetName.Matches(payload.TargetName);
     }
 }
